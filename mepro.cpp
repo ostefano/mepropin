@@ -1,18 +1,16 @@
-/*
-* This file contains an ISA-portable PIN tool for tracing memory accesses.
-*/
 #include <stdio.h>
 #include "pin.H"
+
 FILE * trace;
-// Print a memory read record
+
 VOID RecordMemRead(VOID * ip, VOID * addr) {
     fprintf(trace,"%p: R %p\n", ip, addr);
 }
-// Print a memory write record
+
 VOID RecordMemWrite(VOID * ip, VOID * addr) {
-    fprintf(trace,"%p: W %p - %d\n", ip, addr, IARG_THREAD_ID);
+    fprintf(trace,"%p: W %p\n", ip, addr);
 }
-// Is called for every instruction and instruments reads and writes
+
 VOID Instruction(INS ins, VOID *v) {
     // Instruments memory accesses using a predicated call, i.e.
     // the instrumentation is called iff the instruction will actually be executed.
@@ -62,8 +60,9 @@ INT32 Usage() {
 /* Main */
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
+	trace = fopen("C:\\temp\\pinatrace.out", "a");
+	if (trace == NULL) return 0;
     if (PIN_Init(argc, argv)) return Usage();
-    trace = fopen("pinatrace.out", "w");
     INS_AddInstrumentFunction(Instruction, 0);
     PIN_AddFiniFunction(Fini, 0);
     // Never returns

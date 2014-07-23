@@ -8,6 +8,7 @@ PINTOOL_NAME=mepro
 #TARGET_PNAME := $(notdir $(TARGET_BIN))
 #TARGET_PID := $(shell pgrep $(TARGET_PNAME))
 #PINTOOL_FILE=$(PINTOOL_NAME).so
+#PIN_EXE=$(PIN_ROOT)\\pin.exe
 
 
 ##### OSX
@@ -16,6 +17,9 @@ PINTOOL_NAME=mepro
 #TARGET_PNAME := $(notdir $(TARGET_BIN))
 #TARGET_PID := $(shell pgrep $(TARGET_PNAME))
 #PINTOOL_FILE=$(PINTOOL_NAME).dylib
+#PIN_ROOT=/Users/stefano/pin-2.13-62732-clang.5.0-mac
+#PIN_ROOT=/Users/stefano/pin-2.13-65163-clang.5.0-mac
+#PIN_EXE=$(PIN_ROOT)\\pin.exe
 
 #####  WINDOWS
 ATTACH_TO_TARGET=true
@@ -23,13 +27,14 @@ TARGET_BIN=C:\\Windows\\SysWOW64\\notepad.exe
 TARGET_PNAME=$(shell .\\notdir.cmd $(TARGET_BIN))
 TARGET_PID=$(shell .\\pgrep.cmd $(TARGET_PNAME))
 PINTOOL_FILE=$(PINTOOL_NAME).dll
-
+PIN_ROOT=..\\pin
+PIN_EXE=$(PIN_ROOT)\\pin.exe
 
 
 # We need the actual lib ncame based on arch
 #ifeq ($(UNAME),Darwin)
 #PINTOOL_FILE=$(PINTOOL_NAME).dylib
-#else
+#else ifeq ()
 #PINTOOL_FILE=$(PINTOOL_NAME).so
 #endif
 
@@ -70,37 +75,31 @@ LIB_ROOTS :=
 export LIB_ROOTS
 
 # Set the ROOT of the pintools here
-# Absolute paths are bad (colon problems)
-PIN_ROOT=/Users/stefano/Downloads/pin-2.12-58423-clang.4.2-mac
-PIN_ROOT=/Users/stefano/Downloads/pin-2.13-61206-clang.4.2-mac
-PIN_ROOT=/Users/stefano/pin-2.13-62141-clang.5.0-mac
-PIN_ROOT=/Users/stefano/pin-2.13-62732-clang.5.0-mac
-#PIN_ROOT=/Users/stefano/pin-2.13-65163-clang.5.0-mac
-PIN_ROOT=../pin
 
-all:
-	# Compiling for ia32
-	$(MAKE) -f makefile.pin PIN_ROOT=$(PIN_ROOT) TARGET=ia32
-	# Compiling for ia64
-	#$(MAKE) -f makefile.pin 'PIN_ROOT=$(PIN_ROOT)'
+all: ia32
+
+ia32:
+	$(MAKE) -f makefile.pin 'PIN_ROOT=$(PIN_ROOT)' TARGET=ia32
+
+ia64:
+	$(MAKE) -f makefile.pin 'PIN_ROOT=$(PIN_ROOT)'
 
 clean:
 	# Cleaning for ia32
-	$(MAKE) -f makefile.pin clean PIN_ROOT=$(PIN_ROOT) TARGET=ia32
+	$(MAKE) -f makefile.pin clean 'PIN_ROOT=$(PIN_ROOT)' TARGET=ia32
 	# Cleaning for ia64
-	#$(MAKE) -f makefile.pin clean PIN_ROOT=$(PIN_ROOT)
+	$(MAKE) -f makefile.pin clean 'PIN_ROOT=$(PIN_ROOT)'
 
 run:
+ifeq ($(TARGET_CPU), x86)
+	# x86
+endif
+	@echo $(TARGET_CPU)
 	@echo B $(TARGET_BIN)
 	@echo T $(TARGET_PNAME)
 	@echo P $(TARGET_PID)
-#ifeq ($(TARGET),ia32)
-#	@echo "ia32"
-#else
-#	@echo "ia64"
-#endif
 ifeq ($(ATTACH_TO_TARGET),true)
-	C:\\Users\\Stefano\\pin\\ia32\\bin\\pin.exe -vv -pid $(TARGET_PID) -t C:\\Users\\Stefano\\mepropin\\obj-ia32\\mepro.dll
+	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t C:\\Users\\Stefano\\mepropin\\obj-ia32\\mepro.dll
 else
-	$(PIN_ROOT)/pin -follow_execv -t64 obj-intel64//$(PINTOOL_FILE) -t obj-ia32//$(PINTOOL_FILE) -- $(TARGET_BIN)
+	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t obj-ia32//$(PINTOOL_FILE) -- $(TARGET_BIN)
 endif
