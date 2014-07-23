@@ -56,21 +56,25 @@ LIB_ROOTS :=
 export LIB_ROOTS
 
 # Set the ROOT of the pintools here
+# Absolute paths are bad (colon problems)
 PIN_ROOT=/Users/stefano/Downloads/pin-2.12-58423-clang.4.2-mac
 PIN_ROOT=/Users/stefano/Downloads/pin-2.13-61206-clang.4.2-mac
 PIN_ROOT=/Users/stefano/pin-2.13-62141-clang.5.0-mac
 PIN_ROOT=/Users/stefano/pin-2.13-62732-clang.5.0-mac
 #PIN_ROOT=/Users/stefano/pin-2.13-65163-clang.5.0-mac
+PIN_ROOT=../pin
 
 all:
 	# Compiling for ia32
 	$(MAKE) -f makefile.pin PIN_ROOT=$(PIN_ROOT) TARGET=ia32
 	# Compiling for ia64
-	$(MAKE) -f makefile.pin PIN_ROOT=$(PIN_ROOT)
+	#$(MAKE) -f makefile.pin 'PIN_ROOT=$(PIN_ROOT)'
 
 clean:
-	$(MAKE) -f makefile.pin PIN_ROOT=$(PIN_ROOT) TARGET=ia32
-	$(MAKE) -f makefile.pin clean PIN_ROOT=$(PIN_ROOT)
+	# Cleaning for ia32
+	$(MAKE) -f makefile.pin clean PIN_ROOT=$(PIN_ROOT) TARGET=ia32
+	# Cleaning for ia64
+	#$(MAKE) -f makefile.pin clean PIN_ROOT=$(PIN_ROOT)
 
 run:
 	@echo $(TARGET_PID)
