@@ -2,22 +2,36 @@ UNAME=$(shell uname)
 PINTOOL_NAME=mepro
 
 
-
-ATTACH_TO_TARGET=false
-
-TARGET_BIN=/bin/ls
-TARGET_BIN=/Applications/Calculator.app/Contents/MacOS/Calculator
-TARGET_PNAME := $(notdir $(TARGET_BIN))
-TARGET_PID := $(shell pgrep $(TARGET_PNAME))
-
+##### LINUX
+#ATTACH_TO_TARGET=false
+#TARGET_BIN=/bin/ls
+#TARGET_PNAME := $(notdir $(TARGET_BIN))
+#TARGET_PID := $(shell pgrep $(TARGET_PNAME))
+#PINTOOL_FILE=$(PINTOOL_NAME).so
 
 
-# We need the actual lib name based on arch
-ifeq ($(UNAME),Darwin)
-PINTOOL_FILE=$(PINTOOL_NAME).dylib
-else
-PINTOOL_FILE=$(PINTOOL_NAME).so
-endif
+##### OSX
+#ATTACH_TO_TARGET=false
+#TARGET_BIN=/bin/ls
+#TARGET_PNAME := $(notdir $(TARGET_BIN))
+#TARGET_PID := $(shell pgrep $(TARGET_PNAME))
+#PINTOOL_FILE=$(PINTOOL_NAME).dylib
+
+#####  WINDOWS
+ATTACH_TO_TARGET=true
+TARGET_BIN=C:\\Windows\\SysWOW64\\notepad.exe
+TARGET_PNAME=$(shell .\\notdir.cmd $(TARGET_BIN))
+TARGET_PID=$(shell .\\pgrep.cmd $(TARGET_PNAME))
+PINTOOL_FILE=$(PINTOOL_NAME).dll
+
+
+
+# We need the actual lib ncame based on arch
+#ifeq ($(UNAME),Darwin)
+#PINTOOL_FILE=$(PINTOOL_NAME).dylib
+#else
+#PINTOOL_FILE=$(PINTOOL_NAME).so
+#endif
 
 # This defines tests which run tools of the same name.  This is simply for convenience to avoid
 # defining the test name twice (once in TOOL_ROOTS and again in TEST_ROOTS).
@@ -77,14 +91,16 @@ clean:
 	#$(MAKE) -f makefile.pin clean PIN_ROOT=$(PIN_ROOT)
 
 run:
-	@echo $(TARGET_PID)
+	@echo B $(TARGET_BIN)
+	@echo T $(TARGET_PNAME)
+	@echo P $(TARGET_PID)
 #ifeq ($(TARGET),ia32)
 #	@echo "ia32"
 #else
 #	@echo "ia64"
 #endif
 ifeq ($(ATTACH_TO_TARGET),true)
-	$(PIN_ROOT)/pin -pid $(TARGET_PID) -mt_tool 1 -mt 1 -t64 obj-intel64//$(PINTOOL_FILE) -t obj-ia32//$(PINTOOL_FILE)
+	C:\\Users\\Stefano\\pin\\ia32\\bin\\pin.exe -vv -pid $(TARGET_PID) -t C:\\Users\\Stefano\\mepropin\\obj-ia32\\mepro.dll
 else
 	$(PIN_ROOT)/pin -follow_execv -t64 obj-intel64//$(PINTOOL_FILE) -t obj-ia32//$(PINTOOL_FILE) -- $(TARGET_BIN)
 endif
