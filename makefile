@@ -27,7 +27,7 @@ TARGET_BIN=C:\\Windows\\SysWOW64\\notepad.exe
 TARGET_PNAME=$(shell .\\notdir.cmd $(TARGET_BIN))
 TARGET_PID=$(shell .\\pgrep.cmd $(TARGET_PNAME))
 PINTOOL_FILE=$(PINTOOL_NAME).dll
-PIN_ROOT=..\\pin
+PIN_ROOT=..//pin
 PIN_EXE=$(PIN_ROOT)\\pin.exe
 
 
@@ -98,6 +98,7 @@ endif
 	@echo B $(TARGET_BIN)
 	@echo T $(TARGET_PNAME)
 	@echo P $(TARGET_PID)
+	$(shell $(TARGET_BIN) &)
 ifeq ($(ATTACH_TO_TARGET),true)
 	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t C:\\Users\\Stefano\\mepropin\\obj-ia32\\mepro.dll
 else
