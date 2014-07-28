@@ -1,8 +1,26 @@
 #include <stdio.h>
+
+
 #include "pin.H"
 
 FILE * trace;
 
+typedef void * PVOID;
+typedef unsigned long ULONG;
+
+typedef struct {
+     PVOID ExceptionList;
+     PVOID StackBase;
+     PVOID StackLimit;
+     PVOID SubSystemTib;
+     union
+     {
+          PVOID FiberData;
+          ULONG Version;
+     };
+     PVOID ArbitraryUserPointer;
+     PVOID Self;
+} NT_TIB;
 
 
 typedef struct {
@@ -32,6 +50,12 @@ typedef struct {
 
 PROCESS_ENV * pe;
 
+
+BOOL IsStack(ADDRINT ai) {
+    return TRUE;
+}
+
+
 VOID RecordMemRead(VOID * ip, VOID * addr) {
     fprintf(trace,"%p: R %p\n", ip, addr);
 }
@@ -42,10 +66,35 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
         pe->thread_envs[pe->thread_count] = (THREAD_ENV *) malloc(sizeof(THREAD_ENV));
         pe->lookup_table[th_id] = pe->thread_count;
         pe->thread_count++;
-        fprintf(trace,"Added new thread! (%p)\n", th_id);
+
+        //NT_TIB* tib = (NT_TIB *)__readgsqword(0x18) + 0x2000;
+
+        NT_TIB* tib;
+        __asm {
+            mov EAX, GS:[0x30]
+            mov [tib], EAX
+        }
+
+        NT_TIB* rtib = (NT_TIB *) malloc (sizeof(NT_TIB));
+
+        PIN_SafeCopy (rtib, tib + 0x2000, sizeof(NT_TIB));
+
+        pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) rtib->StackLimit;
+        pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) rtib->StackBase;
+
+        free(rtib);
+
+        fprintf(trace,"Added new thread! (%p) (ma=%p)\n", th_id, addr);
     }
 
     pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
+
+    if( (ADDRINT)addr >= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] &&
+        (ADDRINT)addr <= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1]) {
+        //pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
+    } else {
+        pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
+    }
 
     //fprintf(trace,"[%p] %p: W %p\n", th_id, ip, addr);
 }
@@ -62,7 +111,9 @@ VOID Instruction(INS ins, VOID *v) {
         // Note that in some architectures a single memory operand can be
         // both read and written (for instance incl (%eax) on IA-32)
         // In that case we instrument it once for read and once for write.
-        if (INS_MemoryOperandIsWritten(ins, memOp)) {
+        if (INS_MemoryOperandIsWritten(ins, memOp) ) {
+
+
             INS_InsertPredicatedCall(
                 ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite,
                 IARG_THREAD_ID,
@@ -79,7 +130,8 @@ VOID Fini(INT32 code, VOID *v) {
     
     for (int i = 0; i < 2048; i++) {
         if(pe->lookup_table[i] != -1) {
-            fprintf(trace,"[*] Thread (%p) wrote %d bytes\n", i, pe->thread_envs[pe->lookup_table[i]]->stack_counter);
+            fprintf(trace,"[*] Thread stack range [%p, %p]\n", pe->thread_envs[pe->lookup_table[i]]->stack_range[0], pe->thread_envs[pe->lookup_table[i]]->stack_range[1]);
+            fprintf(trace,"[*] Thread (%p) wrote %d bytes on the stack and %d somewhere else\n", i, pe->thread_envs[pe->lookup_table[i]]->stack_counter, pe->thread_envs[pe->lookup_table[i]]->heap_counter);
         }
     }
 
