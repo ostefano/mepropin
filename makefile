@@ -27,7 +27,7 @@ TARGET_BIN=C:\\Windows\\SysWOW64\\notepad.exe
 TARGET_PNAME=$(shell .\\notdir.cmd $(TARGET_BIN))
 TARGET_PID=$(shell .\\pgrep.cmd $(TARGET_PNAME))
 PINTOOL_FILE=$(PINTOOL_NAME).dll
-PIN_ROOT=..//pin
+PIN_ROOT=..\\pin
 PIN_EXE=$(PIN_ROOT)\\pin.exe
 
 
@@ -73,6 +73,16 @@ export DLL_ROOTS
 # This defines any static libraries (archives), that need to be built.
 LIB_ROOTS :=
 export LIB_ROOTS
+
+
+
+#TEST_TOOL_ROOTS += mepro
+#TEST_ROOTS += membuffer_threadpool_mt memtrace_threadpool_mt
+#APP_ROOTS += mepropin
+#OBJECT_ROOTS += atomic_increment_$(TARGET)
+
+mepro.dll: mepro.cpp $(THREADLIB)
+	$(APP_CXX) ASDASD $(APP_CXXFLAGS_NOOPT) $(COMP_EXE)$@ $^ $(APP_LDFLAGS_NOOPT) $(APP_LIBS)
 
 # Set the ROOT of the pintools here
 

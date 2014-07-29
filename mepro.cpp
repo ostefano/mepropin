@@ -1,4 +1,6 @@
+
 #include <stdio.h>
+
 
 
 #include "pin.H"
@@ -50,12 +52,6 @@ typedef struct {
 
 PROCESS_ENV * pe;
 
-
-BOOL IsStack(ADDRINT ai) {
-    return TRUE;
-}
-
-
 VOID RecordMemRead(VOID * ip, VOID * addr) {
     fprintf(trace,"%p: R %p\n", ip, addr);
 }
@@ -67,49 +63,43 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
         pe->lookup_table[th_id] = pe->thread_count;
         pe->thread_count++;
 
-        //NT_TIB* tib = (NT_TIB *)__readgsqword(0x18) + 0x2000;
-
-
-        NT_TIB* tib;
-
-		UINT32 *address;
+		UINT64 value;
+		UINT64 *teb64_address;
         __asm {
             mov EAX, GS:[0x30]
-            mov address, EAX
+            mov teb64_address, EAX
         }
 
-        //NT_TIB* rtib = (NT_TIB *) malloc (32);
+		PIN_SafeCopy (&value, teb64_address+0x100, sizeof(UINT64));
+		fprintf(trace, "[!] TEB64 address (%016X): %016X\n", teb64_address, *teb64_address);
+		if(value == NULL) {
+			fprintf(trace, "NOP\n");
+		}
+		
+		UINT32 stack_base;
+		UINT32 stack_limit;
+		UINT32 *teb32_address = (UINT32 *) teb64_address + (0x2000/4);
 
-		//address = address;
+		// REMEMBER POINTER ARITHMETIC
+		PIN_SafeCopy (&stack_base, teb32_address+1, sizeof(UINT32));
+		PIN_SafeCopy (&stack_limit, teb32_address+2, sizeof(UINT32));	
+		
+		fprintf(trace, "[!] TEB32 address: %p\n", teb32_address);
+		fprintf(trace, "[!]       StackBase:	%p\n", stack_base);
+		fprintf(trace, "[!]       StackLimit:	%p\n", stack_limit);
 
-		UINT32 t_add;
-		PIN_SafeCopy (&t_add, address + 0x4, sizeof(UINT32));
-
-		UINT64 stack_base;
-		PIN_SafeCopy (&stack_base, address + 0x4, sizeof(UINT64));
-
-		UINT64 stack_top;
-		PIN_SafeCopy (&stack_top, address + 0x8, sizeof(UINT64));
-
-		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_base;
-		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_top;
-
-		fprintf(trace, "[%p] Val1 %016X Val2 %016X Val3 %p\n", address, stack_base, stack_top, t_add);
-        //free(rtib);
-
-        //fprintf(trace,"Added new thread! (%p) (ma=%p)\n", th_id, addr);
+        pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_limit;
+		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_base;
     }
 
-    pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
-
-    if( (ADDRINT)addr >= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] &&
-        (ADDRINT)addr <= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1]) {
-        //pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
-    } else {
+    if( (ADDRINT) addr >= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] &&
+        (ADDRINT) addr <= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1]) {
         pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
+    } else {
+        pe->thread_envs[pe->lookup_table[th_id]]->heap_counter += mw;
+		//fprintf(trace, "[->] Memory access to no stack... (%p)\n", addr);
     }
 
-    //fprintf(trace,"[%p] %p: W %p\n", th_id, ip, addr);
 }
 
 VOID Instruction(INS ins, VOID *v) {
@@ -144,7 +134,9 @@ VOID Fini(INT32 code, VOID *v) {
     for (int i = 0; i < 2048; i++) {
         if(pe->lookup_table[i] != -1) {
             fprintf(trace,"[*] Thread stack range [%p, %p]\n", pe->thread_envs[pe->lookup_table[i]]->stack_range[0], pe->thread_envs[pe->lookup_table[i]]->stack_range[1]);
-            fprintf(trace,"[*] Thread (%p) wrote %d bytes on the stack and %d somewhere else\n", i, pe->thread_envs[pe->lookup_table[i]]->stack_counter, pe->thread_envs[pe->lookup_table[i]]->heap_counter);
+            fprintf(trace,"[*] Thread (%p) wrote %llu bytes on the stack and %llu somewhere else\n", i,
+				pe->thread_envs[pe->lookup_table[i]]->stack_counter, 
+				pe->thread_envs[pe->lookup_table[i]]->heap_counter);
         }
     }
 
@@ -166,8 +158,8 @@ INT32 Usage() {
 /* Main */
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
-	trace = fopen("C:\\Users\\Stefano\\Desktop\\mepropin\\pinatrace.out", "w");
-    
+	trace = fopen("C:\\Users\\Stefano\\mepropin\\pinatrace.out", "w");
+    //trace = fopen("C:\\temp\\pinatrace.out", "w");
 
 	if (trace == NULL) return 0;
     if (PIN_Init(argc, argv)) return Usage();
