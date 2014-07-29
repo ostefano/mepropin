@@ -69,22 +69,35 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
 
         //NT_TIB* tib = (NT_TIB *)__readgsqword(0x18) + 0x2000;
 
+
         NT_TIB* tib;
+
+		UINT32 *address;
         __asm {
             mov EAX, GS:[0x30]
-            mov [tib], EAX
+            mov address, EAX
         }
 
-        NT_TIB* rtib = (NT_TIB *) malloc (sizeof(NT_TIB));
+        //NT_TIB* rtib = (NT_TIB *) malloc (32);
 
-        PIN_SafeCopy (rtib, tib + 0x2000, sizeof(NT_TIB));
+		//address = address;
 
-        pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) rtib->StackLimit;
-        pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) rtib->StackBase;
+		UINT32 t_add;
+		PIN_SafeCopy (&t_add, address + 0x4, sizeof(UINT32));
 
-        free(rtib);
+		UINT64 stack_base;
+		PIN_SafeCopy (&stack_base, address + 0x4, sizeof(UINT64));
 
-        fprintf(trace,"Added new thread! (%p) (ma=%p)\n", th_id, addr);
+		UINT64 stack_top;
+		PIN_SafeCopy (&stack_top, address + 0x8, sizeof(UINT64));
+
+		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_base;
+		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_top;
+
+		fprintf(trace, "[%p] Val1 %016X Val2 %016X Val3 %p\n", address, stack_base, stack_top, t_add);
+        //free(rtib);
+
+        //fprintf(trace,"Added new thread! (%p) (ma=%p)\n", th_id, addr);
     }
 
     pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
@@ -153,7 +166,7 @@ INT32 Usage() {
 /* Main */
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
-	trace = fopen("C:\\Users\\Stefano\\mepropin\\pinatrace.out", "w");
+	trace = fopen("C:\\Users\\Stefano\\Desktop\\mepropin\\pinatrace.out", "w");
     
 
 	if (trace == NULL) return 0;
