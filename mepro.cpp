@@ -1,9 +1,7 @@
 
 #include <stdio.h>
-
-
-
 #include "pin.H"
+#include "winapi.h"
 
 FILE * trace;
 
@@ -158,7 +156,9 @@ INT32 Usage() {
 /* Main */
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
-	trace = fopen("C:\\Users\\Stefano\\mepropin\\pinatrace.out", "w");
+
+	DivideByZero();
+	trace = fopen("C:\\Users\\Stefano\\Desktop\\mepropin\\pinatrace.out", "w");
     //trace = fopen("C:\\temp\\pinatrace.out", "w");
 
 	if (trace == NULL) return 0;

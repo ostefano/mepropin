@@ -29,6 +29,8 @@ TARGET_PID=$(shell .\\pgrep.cmd $(TARGET_PNAME))
 PINTOOL_FILE=$(PINTOOL_NAME).dll
 PIN_ROOT=..\\pin
 PIN_EXE=$(PIN_ROOT)\\pin.exe
+CWD=C:\\Users\\Stefano\\Desktop\\mepropin
+
 
 
 # We need the actual lib ncame based on arch
@@ -41,17 +43,17 @@ PIN_EXE=$(PIN_ROOT)\\pin.exe
 # This defines tests which run tools of the same name.  This is simply for convenience to avoid
 # defining the test name twice (once in TOOL_ROOTS and again in TEST_ROOTS).
 # Tests defined here should not be defined in TOOL_ROOTS and TEST_ROOTS.
-TEST_TOOL_ROOTS := 
-export TEST_TOOL_ROOTS
+#TEST_TOOL_ROOTS := 
+#export TEST_TOOL_ROOTS
 
 # This defines the tests to be run that were not already defined in TEST_TOOL_ROOTS.
-TEST_ROOTS :=
-export TEST_ROOTS
+#TEST_ROOTS :=
+#export TEST_ROOTS
 
 # This defines a list of tests that should run in the "short" sanity. Tests in this list must also
 # appear either in the TEST_TOOL_ROOTS or the TEST_ROOTS list.
-SANITY_SUBSET := 
-export SANITY_SUBSET
+#SANITY_SUBSET := 
+#export SANITY_SUBSET
 
 # This defines the tools which will be run during the the tests, and were not already defined in
 # TEST_TOOL_ROOTS.
@@ -59,11 +61,11 @@ TOOL_ROOTS := mepro
 export TOOL_ROOTS
 
 # This defines all the applications that will be run during the tests.
-APP_ROOTS := 
-export APP_ROOTS
+#APP_ROOTS := 
+#export APP_ROOTS
 
 # This defines any additional object files that need to be compiled.
-OBJECT_ROOTS := 
+OBJECT_ROOTS := winapi
 export OBJECT_ROOTS
 
 # This defines any additional dlls (shared objects), other than the pintools, that need to be compiled.
@@ -73,18 +75,6 @@ export DLL_ROOTS
 # This defines any static libraries (archives), that need to be built.
 LIB_ROOTS :=
 export LIB_ROOTS
-
-
-
-#TEST_TOOL_ROOTS += mepro
-#TEST_ROOTS += membuffer_threadpool_mt memtrace_threadpool_mt
-#APP_ROOTS += mepropin
-#OBJECT_ROOTS += atomic_increment_$(TARGET)
-
-mepro.dll: mepro.cpp $(THREADLIB)
-	$(APP_CXX) ASDASD $(APP_CXXFLAGS_NOOPT) $(COMP_EXE)$@ $^ $(APP_LDFLAGS_NOOPT) $(APP_LIBS)
-
-# Set the ROOT of the pintools here
 
 all: ia32
 
@@ -104,13 +94,12 @@ run:
 ifeq ($(TARGET_CPU), x86)
 	# x86
 endif
-	@echo $(TARGET_CPU)
 	@echo B $(TARGET_BIN)
 	@echo T $(TARGET_PNAME)
 	@echo P $(TARGET_PID)
-	$(shell $(TARGET_BIN) &)
+
 ifeq ($(ATTACH_TO_TARGET),true)
-	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t C:\\Users\\Stefano\\mepropin\\obj-ia32\\mepro.dll
+	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE)
 else
-	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t obj-ia32//$(PINTOOL_FILE) -- $(TARGET_BIN)
+	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -- $(TARGET_BIN)
 endif
