@@ -8,6 +8,15 @@ FILE * trace;
 typedef void * PVOID;
 typedef unsigned long ULONG;
 
+#define TRACE_EN 1
+
+/*
+ * The ID of the buffer
+ */
+BUFFER_ID bufId;
+
+#define NUM_BUF_PAGES 1024
+
 typedef struct {
      PVOID ExceptionList;
      PVOID StackBase;
@@ -100,6 +109,36 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
 
 }
 
+struct MEMREF {
+    ADDRINT     pc;
+    ADDRINT     ea;
+    UINT32      size;
+    BOOL        read;
+	UINT32		tid;
+
+};
+
+VOID Trace(TRACE trace, VOID *v) {
+    for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl=BBL_Next(bbl)) {
+        for(INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins=INS_Next(ins)) {
+            UINT32 memoryOperands = INS_MemoryOperandCount(ins);
+            for (UINT32 memOp = 0; memOp < memoryOperands; memOp++) {
+                UINT32 refSize = INS_MemoryOperandSize(ins, memOp);
+                if (INS_MemoryOperandIsWritten(ins, memOp)) {
+                    INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufId,
+                                         IARG_INST_PTR, offsetof(struct MEMREF, pc),
+                                         IARG_MEMORYOP_EA, memOp, offsetof(struct MEMREF, ea),
+                                         IARG_UINT32, refSize, offsetof(struct MEMREF, size), 
+                                         IARG_BOOL, FALSE, offsetof(struct MEMREF, read),
+										 IARG_THREAD_ID, offsetof(struct MEMREF, tid), 
+                                         IARG_END);
+                }
+            }
+        }
+    }
+}
+
+
 VOID Instruction(INS ins, VOID *v) {
     // Instruments memory accesses using a predicated call, i.e.
     // the instrumentation is called iff the instruction will actually be executed.
@@ -113,14 +152,11 @@ VOID Instruction(INS ins, VOID *v) {
         // both read and written (for instance incl (%eax) on IA-32)
         // In that case we instrument it once for read and once for write.
         if (INS_MemoryOperandIsWritten(ins, memOp) ) {
-
-
             INS_InsertPredicatedCall(
                 ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite,
                 IARG_THREAD_ID,
                 IARG_MEMORYWRITE_SIZE,
-                IARG_INST_PTR,
-                
+                IARG_INST_PTR,  
                 IARG_MEMORYOP_EA, memOp,
                 IARG_END);
         }
@@ -152,27 +188,72 @@ INT32 Usage() {
     return -1;
 }
 
+
+VOID * BufferFull(BUFFER_ID id, THREADID tid, const CONTEXT *ctxt, VOID *buf,
+                  UINT64 numElements, VOID *v)
+{
+    /*
+    This code will work - but it is very slow, so for testing purposes we run with the Knob turned off
+    */
+
+	return buf;
+	/*
+    if (KnobDoWriteToOutputFile)
+    {
+        PIN_GetLock(&fileLock, 1);
+
+        struct MEMREF * reference=(struct MEMREF*)buf;
+
+        for(UINT64 i=0; i<numElements; i++, reference++)
+        {
+            if (reference->ea != 0)
+                ofile << tid << "   "  << reference->pc << "   " << reference->ea << endl;
+        }
+        PIN_ReleaseLock(&fileLock);
+    }
+
+    return buf;
+	*/
+}
+
+VOID ThreadStart(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
+    // There is a new MLOG for every thread.  Opens the output file.
+    //MLOG * mlog = new MLOG(tid);
+
+    // A thread will need to look up its MLOG, so save pointer in TLS
+    //PIN_SetThreadData(mlog_key, mlog, tid);
+	fprintf(trace,"[*] Thread (%p) started\n", tid); 
+}
+
+
 /* ===================================================================== */
 /* Main */
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
 
 	DivideByZero();
-	trace = fopen("C:\\Users\\Stefano\\Desktop\\mepropin\\pinatrace.out", "w");
+	trace = fopen("C:\\Users\\Stefano\\mepropin\\pinatrace.out", "w");
     //trace = fopen("C:\\temp\\pinatrace.out", "w");
 
 	if (trace == NULL) return 0;
     if (PIN_Init(argc, argv)) return Usage();
-    
-    /* Playing with PE */
+
+	/* Playing with PE */
     pe = (PROCESS_ENV *) malloc(sizeof(pe));
     memset(pe->lookup_table, -1, sizeof(INT32) * 2048);
     pe->thread_count = 0;
     sprintf(pe->name, "TEST.exe", sizeof("TEST.exe"));
 
+
+#if TRACE_EN		
+	bufId = PIN_DefineTraceBuffer(sizeof(struct MEMREF), NUM_BUF_PAGES, BufferFull, 0);
+	TRACE_AddInstrumentFunction(Trace, 0);
+	PIN_AddThreadStartFunction(ThreadStart, 0);
+#else
     INS_AddInstrumentFunction(Instruction, 0);
+#endif
+
     PIN_AddFiniFunction(Fini, 0);
-    // Never returns
     PIN_StartProgram();
     return 0;
 }
