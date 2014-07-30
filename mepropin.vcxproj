@@ -22,7 +22,7 @@
     <ProjectGuid>{639EF517-FCFC-408E-9500-71F0DC0458DB}</ProjectGuid>
     <RootNamespace>mepropin</RootNamespace>
     <Keyword>Win32Proj</Keyword>
-    <PinRoot>C:\Users\Stefano\pin</PinRoot>
+    <PinRoot>C:\Users\Stefano\Desktop\pin</PinRoot>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'" Label="Configuration">
@@ -255,9 +255,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="mepro.cpp" />
+    <ClCompile Include="winapi.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="winapi.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
