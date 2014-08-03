@@ -3,12 +3,22 @@
 #include "pin.H"
 #include "winapi.h"
 
+
+//#include <SDKDDKVer.h>
+//#include <winnt.h>
+
+
+
 FILE * trace;
 
 typedef void * PVOID;
 typedef unsigned long ULONG;
 
-#define TRACE_EN 1
+//#define TRACE_EN 1
+
+#ifndef TRACE_EN
+    #define TRACE_EN 0
+#endif
 
 /*
  * The ID of the buffer
@@ -31,6 +41,10 @@ typedef struct {
      PVOID Self;
 } NT_TIB;
 
+typedef struct {
+
+
+} DLL_ENV;
 
 typedef struct {
     UINT32 thread_id;
@@ -45,6 +59,9 @@ typedef struct {
     UINT64 stack_counter;        // All the writes minus the dlls
     UINT64 heap_counter;
     UINT64 data_counter;
+
+	UINT16	dll_count;
+	DLL_ENV	* dll_envs[2048];
 } THREAD_ENV;
 
 
@@ -52,7 +69,8 @@ typedef struct {
     UINT32 process_id;
     CHAR name[64];
     INT32          lookup_table[2048];
-    UINT32          thread_count;
+
+    UINT16          thread_count;
     THREAD_ENV *    thread_envs[2048];
 } PROCESS_ENV;
 
@@ -97,13 +115,26 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
 
         pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_limit;
 		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_base;
+
+		pe->thread_envs[pe->lookup_table[th_id]]->data_range[0] = (ADDRINT) get_dll_1(trace);
+		pe->thread_envs[pe->lookup_table[th_id]]->data_range[1] = (ADDRINT) get_dll_2(trace);
+
+
+
     }
 
     if( (ADDRINT) addr >= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] &&
         (ADDRINT) addr <= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1]) {
         pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
     } else {
-        pe->thread_envs[pe->lookup_table[th_id]]->heap_counter += mw;
+
+		if( (ADDRINT) addr >= pe->thread_envs[pe->lookup_table[th_id]]->data_range[0] &&
+			(ADDRINT) addr <= pe->thread_envs[pe->lookup_table[th_id]]->data_range[1]) {
+			pe->thread_envs[pe->lookup_table[th_id]]->data_counter += mw;
+		} else {
+			pe->thread_envs[pe->lookup_table[th_id]]->heap_counter += mw;
+			fprintf(trace, "[->] Memory access unreck... (%p)\n", addr);
+		}
 		//fprintf(trace, "[->] Memory access to no stack... (%p)\n", addr);
     }
 
@@ -140,17 +171,8 @@ VOID Trace(TRACE trace, VOID *v) {
 
 
 VOID Instruction(INS ins, VOID *v) {
-    // Instruments memory accesses using a predicated call, i.e.
-    // the instrumentation is called iff the instruction will actually be executed.
-    //
-    // On the IA-32 and Intel(R) 64 architectures conditional moves and REP
-    // prefixed instructions appear as predicated instructions in Pin.
     UINT32 memOperands = INS_MemoryOperandCount(ins);
-    // Iterate over each memory operand of the instruction.
     for (UINT32 memOp = 0; memOp < memOperands; memOp++) {
-        // Note that in some architectures a single memory operand can be
-        // both read and written (for instance incl (%eax) on IA-32)
-        // In that case we instrument it once for read and once for write.
         if (INS_MemoryOperandIsWritten(ins, memOp) ) {
             INS_InsertPredicatedCall(
                 ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite,
@@ -168,18 +190,23 @@ VOID Fini(INT32 code, VOID *v) {
     for (int i = 0; i < 2048; i++) {
         if(pe->lookup_table[i] != -1) {
             fprintf(trace,"[*] Thread stack range [%p, %p]\n", pe->thread_envs[pe->lookup_table[i]]->stack_range[0], pe->thread_envs[pe->lookup_table[i]]->stack_range[1]);
-            fprintf(trace,"[*] Thread (%p) wrote %llu bytes on the stack and %llu somewhere else\n", i,
+            fprintf(trace,"[*] Thread (%p) wrote %llu stack, %llu data, and %llu selse\n", i,
 				pe->thread_envs[pe->lookup_table[i]]->stack_counter, 
+				pe->thread_envs[pe->lookup_table[i]]->data_counter,
 				pe->thread_envs[pe->lookup_table[i]]->heap_counter);
         }
     }
 
+	printdlls(trace);
+
+	fprintf(trace, "[*] TTT\n");
+
+	printend(trace);
+
+
+
     fprintf(trace, "#eof\n");
     fclose(trace);
-
-
-
-
 }
 
 INT32 Usage() {
@@ -189,9 +216,7 @@ INT32 Usage() {
 }
 
 
-VOID * BufferFull(BUFFER_ID id, THREADID tid, const CONTEXT *ctxt, VOID *buf,
-                  UINT64 numElements, VOID *v)
-{
+VOID * BufferFull(BUFFER_ID id, THREADID tid, const CONTEXT *ctxt, VOID *buf, UINT64 numElements, VOID *v) {
     /*
     This code will work - but it is very slow, so for testing purposes we run with the Knob turned off
     */
@@ -232,7 +257,7 @@ VOID ThreadStart(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 int main(int argc, char *argv[]) {
 
 	DivideByZero();
-	trace = fopen("C:\\Users\\Stefano\\mepropin\\pinatrace.out", "w");
+	trace = fopen("C:\\Users\\Stefano\\Desktop\\mepropin\\pinatrace.out", "w");
     //trace = fopen("C:\\temp\\pinatrace.out", "w");
 
 	if (trace == NULL) return 0;
@@ -245,11 +270,15 @@ int main(int argc, char *argv[]) {
     sprintf(pe->name, "TEST.exe", sizeof("TEST.exe"));
 
 
-#if TRACE_EN		
+
+
+#if TRACE_EN
+    fprintf(trace,"[*] Instrumentation TRACE MODE\n");
 	bufId = PIN_DefineTraceBuffer(sizeof(struct MEMREF), NUM_BUF_PAGES, BufferFull, 0);
 	TRACE_AddInstrumentFunction(Trace, 0);
 	PIN_AddThreadStartFunction(ThreadStart, 0);
 #else
+    fprintf(trace,"[*] Instrumentation INS MODE\n");
     INS_AddInstrumentFunction(Instruction, 0);
 #endif
 

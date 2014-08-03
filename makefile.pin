@@ -10,11 +10,15 @@ include $(TOOLS_ROOT)/Config/makefile.default.rules
 
 # Build
 $(OBJDIR)mepro$(PINTOOL_SUFFIX): $(OBJDIR)mepro$(OBJ_SUFFIX) $(OBJDIR)winapi$(OBJ_SUFFIX) 
-	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS)
+	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) Dbghelp.lib
 
 # Build the intermediate object file.
 $(OBJDIR)%$(OBJ_SUFFIX): %.cpp
+ifeq ($(TRACE),1)
+	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ /DTRACE_EN=1 $<
+else
 	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
+endif
 
 # Build the intermediate object file.
 $(OBJDIR)%$(OBJ_SUFFIX): %.c
