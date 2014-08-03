@@ -42,9 +42,16 @@ typedef struct {
 } NT_TIB;
 
 typedef struct {
+	char name[128];
 
+	ADDRINT data_range[2];
+	ADDRINT code_range[2];
 
+	UINT64 stack_counter;
+	UINT64 heap_counter;
+	UINT64 data_counter;
 } DLL_ENV;
+
 
 typedef struct {
     UINT32 thread_id;
@@ -60,6 +67,11 @@ typedef struct {
     UINT64 heap_counter;
     UINT64 data_counter;
 
+	
+	UINT64 global_stack_counter;	// All the writes plus the dlls
+	UINT64 global_heap_counter;
+	UINT64 global_data_counter;
+
 	UINT16	dll_count;
 	DLL_ENV	* dll_envs[2048];
 } THREAD_ENV;
@@ -68,6 +80,7 @@ typedef struct {
 typedef struct {
     UINT32 process_id;
     CHAR name[64];
+	UINT64 bytecounter;
     INT32          lookup_table[2048];
 
     UINT16          thread_count;
@@ -79,6 +92,16 @@ PROCESS_ENV * pe;
 
 VOID RecordMemRead(VOID * ip, VOID * addr) {
     fprintf(trace,"%p: R %p\n", ip, addr);
+}
+
+
+#define COPY_RANGE(range_dst, range_src)	range_dst[0] = range_src[0]; range_dst[1] = range_src[1];
+#define ASSIGN_RANGE(range, min, max)		range[0] = min; range[1] = max;
+#define IS_WITHIN_RANGE(value, range)		(value >= range[0] && value <= range[1])
+
+
+VOID pe_fill_dlls(THREAD_ENV *tenv) {
+
 }
 
 VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
@@ -116,10 +139,19 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
         pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_limit;
 		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_base;
 
-		pe->thread_envs[pe->lookup_table[th_id]]->data_range[0] = (ADDRINT) get_dll_1(trace);
-		pe->thread_envs[pe->lookup_table[th_id]]->data_range[1] = (ADDRINT) get_dll_2(trace);
+		//pe->thread_envs[pe->lookup_table[th_id]]->data_range[0] = (ADDRINT) get_dll_1(trace);
+		//pe->thread_envs[pe->lookup_table[th_id]]->data_range[1] = (ADDRINT) get_dll_2(trace);
 
 
+		set_range(trace, pe->thread_envs[pe->lookup_table[th_id]]->data_range, ".data");
+		set_range(trace, pe->thread_envs[pe->lookup_table[th_id]]->code_range, ".text");
+		
+		pe_fill_dlls(pe->thread_envs[pe->lookup_table[th_id]]);
+
+
+		//pe_fill_process(pe);
+		//pe_fill_thread(pe->thread_envs[pe->lookup_table[th_id]]);
+		//pe_fill_dlls(pe->thread_envs[pe->lookup_table[th_id]]);
 
     }
 
@@ -201,8 +233,11 @@ VOID Fini(INT32 code, VOID *v) {
 
 	fprintf(trace, "[*] TTT\n");
 
-	printend(trace);
+	//printend(trace);
 
+	printmod(trace);
+
+	get_dll_3(trace);
 
 
     fprintf(trace, "#eof\n");

@@ -19,5 +19,9 @@ typedef struct LDR_DATA_ENTRY {
 int DivideByZero();
 void printdlls(FILE * trace);
 void printend(FILE * trace);
+void printmod(FILE * trace);
 UINT32 get_dll_1(FILE * trace);
 UINT32 get_dll_2(FILE * trace);
+void get_dll_3(FILE * trace);
+
+void set_range(FILE * trace, UINT32 * range, char * section);
