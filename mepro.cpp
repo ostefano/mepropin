@@ -56,12 +56,25 @@ bool DLL_isInWriteWhiteList(char *dll_name) {
 	return FALSE;
 }
 
-VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, INT32 mw, VOID * ip, VOID * addr) {
+VOID TestCall(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID *ip, void *addr) {
+	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
+	fprintf(trace, "[*] %p\n", esp);
+}
 
+ADDRINT AffectStack(INT32 th_id, VOID * addr) {
+	    if(pe->lookup_table[th_id] == -1) {
+			return 1;
+		}
+		if (IS_WITHIN_RANGE((ADDRINT) addr, pe->thread_envs[pe->lookup_table[th_id]]->stack_range)) {
+			return 0;
+		}
+		return 1;
+}
+
+VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID * addr) {
+	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
 	THREAD_ENV * current_t;
 	DLL_ENV * current_d;
-	//fprintf(trace, "[*] %p - %d\n", ctx, mw);
-	ADDRINT esp = 0;//PIN_GetContextReg(ctx, REG_INST_PTR);
 	pe->bytecounter += mw;
 
     if(pe->lookup_table[th_id] == -1) {
@@ -95,7 +108,6 @@ VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, INT32 mw, VOID * ip, VOID 
         pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_limit;
 		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_base;
 
-
 		/*
 		ADDRINT teb = PIN_GetContextReg(ctx,REG_SEG_FS_BASE);
 		ADDRINT stackTop;
@@ -113,16 +125,18 @@ VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, INT32 mw, VOID * ip, VOID 
 		pe_fill_dlls(trace, pe->thread_envs[pe->lookup_table[th_id]]);
 
     } else {
+		
 		if(esp > pe->thread_envs[pe->lookup_table[th_id]]->esp_min) {
-			current_t->esp_min = 0;
+			pe->thread_envs[pe->lookup_table[th_id]]->esp_min = 0;
 			if(esp > pe->thread_envs[pe->lookup_table[th_id]]->esp_max) {
 				pe->thread_envs[pe->lookup_table[th_id]]->esp_max = esp;
 			}
 		} else {
 			pe->thread_envs[pe->lookup_table[th_id]]->esp_min = esp;
 		}
+		
 	}
-	
+
 	current_t = pe->thread_envs[pe->lookup_table[th_id]];
 	if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->code_range)) {
 		if(IS_WITHIN_RANGE((ADDRINT) addr, current_t->data_range)) {
@@ -199,19 +213,53 @@ VOID Trace(TRACE trace, VOID *v) {
     }
 }
 
+//VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, INT32 mw, VOID * ip, VOID * addr)
+
+
+
+
 
 VOID Instruction(INS ins, VOID *v) {
     UINT32 memOperands = INS_MemoryOperandCount(ins);
     for (UINT32 memOp = 0; memOp < memOperands; memOp++) {
         if (INS_MemoryOperandIsWritten(ins, memOp) ) {
+			// FIRST VERSIN (USELESS MEMORYUP_EA) 
+			/*
             INS_InsertPredicatedCall(
                 ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite,
                 IARG_THREAD_ID,
-				IARG_CONST_CONTEXT,
+				IARG_CONTEXT,
                 IARG_MEMORYWRITE_SIZE,
                 IARG_INST_PTR,  
                 IARG_MEMORYOP_EA, memOp,
                 IARG_END);
+			*/
+			
+			// SECOND VERSION (SLOW) 
+			/*
+			INS_InsertPredicatedCall(
+				ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite, 
+				IARG_THREAD_ID, 
+				IARG_CONTEXT,
+				IARG_MEMORYWRITE_SIZE,
+				IARG_INST_PTR,
+				IARG_MEMORYWRITE_EA,
+				IARG_END);
+			*/
+			
+			INS_InsertIfPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)AffectStack, 
+				IARG_THREAD_ID, 
+				//IARG_REG_VALUE, REG_STACK_PTR,
+				IARG_MEMORYWRITE_EA,
+				IARG_END);
+
+			INS_InsertThenPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite, 
+				IARG_THREAD_ID, 
+				IARG_CONTEXT,
+				IARG_MEMORYWRITE_SIZE,
+				IARG_INST_PTR,
+				IARG_MEMORYWRITE_EA,
+				IARG_END);
         }
     }
 }
