@@ -24,3 +24,4 @@ obj-ia32/*
 obj-intel64/*
 mepropin.sdf
 mepropin.opensdf
+*.cod
