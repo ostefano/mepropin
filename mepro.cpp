@@ -1,20 +1,9 @@
-
 #include <stdio.h>
 #include "pin.H"
 #include "winapi.h"
-
-
-//#include <SDKDDKVer.h>
-//#include <winnt.h>
-
-
+#include "common.h"
 
 FILE * trace;
-
-typedef void * PVOID;
-typedef unsigned long ULONG;
-
-//#define TRACE_EN 1
 
 #ifndef TRACE_EN
     #define TRACE_EN 0
@@ -41,52 +30,6 @@ typedef struct {
      PVOID Self;
 } NT_TIB;
 
-typedef struct {
-	char name[128];
-
-	ADDRINT data_range[2];
-	ADDRINT code_range[2];
-
-	UINT64 stack_counter;
-	UINT64 heap_counter;
-	UINT64 data_counter;
-} DLL_ENV;
-
-
-typedef struct {
-    UINT32 thread_id;
-
-    ADDRINT esp_max;
-    ADDRINT esp_min;
-
-    ADDRINT code_range[2];
-    ADDRINT data_range[2];
-    ADDRINT stack_range[2];
-
-    UINT64 stack_counter;        // All the writes minus the dlls
-    UINT64 heap_counter;
-    UINT64 data_counter;
-
-	
-	UINT64 global_stack_counter;	// All the writes plus the dlls
-	UINT64 global_heap_counter;
-	UINT64 global_data_counter;
-
-	UINT16	dll_count;
-	DLL_ENV	* dll_envs[2048];
-} THREAD_ENV;
-
-
-typedef struct {
-    UINT32 process_id;
-    CHAR name[64];
-	UINT64 bytecounter;
-    INT32          lookup_table[2048];
-
-    UINT16          thread_count;
-    THREAD_ENV *    thread_envs[2048];
-} PROCESS_ENV;
-
 
 PROCESS_ENV * pe;
 
@@ -95,21 +38,55 @@ VOID RecordMemRead(VOID * ip, VOID * addr) {
 }
 
 
-#define COPY_RANGE(range_dst, range_src)	range_dst[0] = range_src[0]; range_dst[1] = range_src[1];
-#define ASSIGN_RANGE(range, min, max)		range[0] = min; range[1] = max;
-#define IS_WITHIN_RANGE(value, range)		(value >= range[0] && value <= range[1])
+int DLL_getDllIndex(THREAD_ENV	* current_t, ADDRINT ip) {
+	for(int i = 0; i < current_t->dll_count; i++) {
+		if(IS_WITHIN_RANGE(ip, (current_t->dll_envs[i]->code_range))) {
+			return i;
+		}
+	}
+	return current_t->dll_count;
+}
 
+#define WRITES_DLL_WHITELIST_SCHEME			0x01
+#define WRITES_DLL_BLACKLIST_SCHEME			0x02
+#define WRITES_DLL_INCLUDE_SCHEME			(WRITES_DLL_BLACKLIST_SCHEME)
+#define WRITES_DLL_WHITELIST				"kernel32.dll", NULL
+#define WRITES_DLL_BLACKLIST				"USER32.dll", "ntdll.dll", NULL	
 
-VOID pe_fill_dlls(THREAD_ENV *tenv) {
+bool DLL_isInWriteBlackList(char *dll_name) {
+	static char* dll_blacklist[] = { WRITES_DLL_BLACKLIST };
+	int i;
+	for(i=0;dll_blacklist[i]!=NULL;i++) {
+		if(!strncmp((char*)dll_name, dll_blacklist[i], strlen(dll_blacklist[i]))) {
+			//DbgPrint("[DLL] Ignoring writes from DLL %s\n", dll_name);
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
 
+bool DLL_isInWriteWhiteList(char *dll_name) {
+	static char* dll_whitelist[] = { WRITES_DLL_WHITELIST };
+	int i;
+	for(i=0;dll_whitelist[i]!=NULL;i++) {
+		if(!strncmp((char*)dll_name, dll_whitelist[i], strlen(dll_whitelist[i]))) {
+			return TRUE;
+		}
+	}
+	return FALSE;
 }
 
 VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
+
+	THREAD_ENV * current_t;
+	DLL_ENV * current_d;
 
     if(pe->lookup_table[th_id] == -1) {
         pe->thread_envs[pe->thread_count] = (THREAD_ENV *) malloc(sizeof(THREAD_ENV));
         pe->lookup_table[th_id] = pe->thread_count;
         pe->thread_count++;
+
+		fprintf(trace, "[*] New thread %d (total=%d) detected (IP=%p, MEM=%p)\n", th_id, pe->thread_count, ip, addr);
 
 		UINT64 value;
 		UINT64 *teb64_address;
@@ -119,9 +96,10 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
         }
 
 		PIN_SafeCopy (&value, teb64_address+0x100, sizeof(UINT64));
-		fprintf(trace, "[!] TEB64 address (%016X): %016X\n", teb64_address, *teb64_address);
+		fprintf(trace, "[!]   TEB64 address *(%016X): %016X\n", teb64_address, *teb64_address);
+		fprintf(trace, "[!]     WOW64 flag = %value\n");
 		if(value == NULL) {
-			fprintf(trace, "NOP\n");
+			
 		}
 		
 		UINT32 stack_base;
@@ -132,44 +110,67 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
 		PIN_SafeCopy (&stack_base, teb32_address+1, sizeof(UINT32));
 		PIN_SafeCopy (&stack_limit, teb32_address+2, sizeof(UINT32));	
 		
-		fprintf(trace, "[!] TEB32 address: %p\n", teb32_address);
-		fprintf(trace, "[!]       StackBase:	%p\n", stack_base);
-		fprintf(trace, "[!]       StackLimit:	%p\n", stack_limit);
+		fprintf(trace, "[!]   TEB32 address: %p\n", teb32_address);
+		fprintf(trace, "[!]     StackBase:	%p\n", stack_base);
+		fprintf(trace, "[!]     StackLimit:	%p\n", stack_limit);
 
         pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_limit;
 		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_base;
 
-		//pe->thread_envs[pe->lookup_table[th_id]]->data_range[0] = (ADDRINT) get_dll_1(trace);
-		//pe->thread_envs[pe->lookup_table[th_id]]->data_range[1] = (ADDRINT) get_dll_2(trace);
-
-
 		set_range(trace, pe->thread_envs[pe->lookup_table[th_id]]->data_range, ".data");
 		set_range(trace, pe->thread_envs[pe->lookup_table[th_id]]->code_range, ".text");
 		
-		pe_fill_dlls(pe->thread_envs[pe->lookup_table[th_id]]);
-
-
-		//pe_fill_process(pe);
-		//pe_fill_thread(pe->thread_envs[pe->lookup_table[th_id]]);
-		//pe_fill_dlls(pe->thread_envs[pe->lookup_table[th_id]]);
+		pe_fill_dlls(trace, pe->thread_envs[pe->lookup_table[th_id]]);
 
     }
 
-    if( (ADDRINT) addr >= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] &&
-        (ADDRINT) addr <= pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1]) {
-        pe->thread_envs[pe->lookup_table[th_id]]->stack_counter += mw;
-    } else {
+	current_t = pe->thread_envs[pe->lookup_table[th_id]];
 
-		if( (ADDRINT) addr >= pe->thread_envs[pe->lookup_table[th_id]]->data_range[0] &&
-			(ADDRINT) addr <= pe->thread_envs[pe->lookup_table[th_id]]->data_range[1]) {
-			pe->thread_envs[pe->lookup_table[th_id]]->data_counter += mw;
+	pe->bytecounter += mw;
+	if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->code_range)) {
+		if(IS_WITHIN_RANGE((ADDRINT) addr, current_t->data_range)) {
+			current_t->data_counter += mw;
+			current_t->global_data_counter += mw;
+		} else if (IS_WITHIN_RANGE((ADDRINT) addr, current_t->stack_range)) {
+			current_t->stack_counter += mw;
+			current_t->global_stack_counter += mw;
+			if( (ADDRINT) ip >= current_t->esp_max) {
+				current_t->slstack_counter += mw;
+				current_t->global_slstack_counter += mw;
+			}
 		} else {
-			pe->thread_envs[pe->lookup_table[th_id]]->heap_counter += mw;
-			fprintf(trace, "[->] Memory access unreck... (%p)\n", addr);
+			current_t->heap_counter += mw;
+			current_t->global_heap_counter += mw;
 		}
-		//fprintf(trace, "[->] Memory access to no stack... (%p)\n", addr);
-    }
-
+	} else {
+		int dll_index = DLL_getDllIndex(pe->thread_envs[pe->lookup_table[th_id]], (ADDRINT) ip);
+		if(dll_index == pe->thread_envs[pe->lookup_table[th_id]]->dll_count) {
+			fprintf(trace, "[!] Code base unknown for instruction %p\n", ip);
+		} else {
+			current_d = pe->thread_envs[pe->lookup_table[th_id]]->dll_envs[dll_index];
+#if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)		
+			if(!DLL_isInWriteBlackList(current_d->name)) {
+#else if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_WHITELIST_SCHEME)
+			if(DLL_isInWriteWhiteList(current_d->name)) {
+#endif
+				if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->data_range) || 
+					IS_WITHIN_RANGE((ADDRINT) ip, current_d->data_range)) {
+					current_d->data_counter					+= mw;
+					current_t->global_data_counter			+= mw;
+				} else if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->stack_range)) {
+					current_d->stack_counter				+= mw;
+					current_t->global_stack_counter			+= mw;
+					if((ADDRINT) ip >= current_t->esp_max) {
+						current_d->slstack_counter				+= mw;
+						current_t->global_slstack_counter		+= mw;
+					}
+				} else {
+					current_d->heap_counter					+= mw;
+					current_t->global_heap_counter			+= mw;
+				}
+			}
+		}	
+	}
 }
 
 struct MEMREF {
@@ -218,28 +219,7 @@ VOID Instruction(INS ins, VOID *v) {
 }
 
 VOID Fini(INT32 code, VOID *v) {
-    
-    for (int i = 0; i < 2048; i++) {
-        if(pe->lookup_table[i] != -1) {
-            fprintf(trace,"[*] Thread stack range [%p, %p]\n", pe->thread_envs[pe->lookup_table[i]]->stack_range[0], pe->thread_envs[pe->lookup_table[i]]->stack_range[1]);
-            fprintf(trace,"[*] Thread (%p) wrote %llu stack, %llu data, and %llu selse\n", i,
-				pe->thread_envs[pe->lookup_table[i]]->stack_counter, 
-				pe->thread_envs[pe->lookup_table[i]]->data_counter,
-				pe->thread_envs[pe->lookup_table[i]]->heap_counter);
-        }
-    }
-
-	printdlls(trace);
-
-	fprintf(trace, "[*] TTT\n");
-
-	//printend(trace);
-
-	printmod(trace);
-
-	get_dll_3(trace);
-
-
+	print_stats(trace, pe);
     fprintf(trace, "#eof\n");
     fclose(trace);
 }
@@ -291,7 +271,8 @@ VOID ThreadStart(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
 
-	DivideByZero();
+
+	//DivideByZero();
 	trace = fopen("C:\\Users\\Stefano\\Desktop\\mepropin\\pinatrace.out", "w");
     //trace = fopen("C:\\temp\\pinatrace.out", "w");
 

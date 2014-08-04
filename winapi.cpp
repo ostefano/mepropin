@@ -4,50 +4,130 @@
 #include <strsafe.h>
 #include <malloc.h>
 
-//#include <cstring>
-
 #include "winapi.h"
-
 #include <Dbghelp.h>
+#include <Winternl.h>
 
-//#include <Ntdef.h>
-#include <Subauth.h>
+#include "common.h"
 
-#define EXPORT_SYM __declspec( dllexport ) 
+#define LDR_DOSHEADER_OFFSET			0x03c
+#define LDR_NTHEADER_OFFSET				0x18
+
+typedef NTSTATUS(*RtlUnicodeStringToAnsiStringRev)(PANSI_STRING, PCUNICODE_STRING, BOOLEAN);
+
+typedef struct LDR_DATA_ENTRY {
+	LIST_ENTRY              InMemoryOrderModuleList;
+	PVOID                   BaseAddress;
+	PVOID                   EntryPoint;
+	ULONG                   SizeOfImage;
+	UNICODE_STRING          FullDllName;
+	UNICODE_STRING          BaseDllName;
+	ULONG                   Flags;
+	SHORT                   LoadCount;
+	SHORT                   TlsIndex;
+	LIST_ENTRY              HashTableEntry;
+	ULONG                   TimeDateStamp;
+} LDR_DATA_ENTRY, *PLDR_DATA_ENTRY;
+
+/*
 
 
-struct ImageSectionInfo
-{
-      char SectionName[8];//the macro is defined WinNT.h
+VOID UpdateESPlimits(int p_index, ULONG saved_esp, ULONG thread_address) {
+	ASSERT(saved_esp != 0);
+	// Update the ESPs only if the thread is not new
+	int t_index = THREAD_getThreadIndex(p_index, thread_address);
+	if(t_index != -1) {
+		THREAD_ENV * current_t = &_attachedProcessesENV[p_index].threads[t_index];
+		ASSERT(current_t != NULL);
+		if(saved_esp > current_t->esp_min) {
+			current_t->esp_min = 0;
+			if(saved_esp > current_t->esp_max) {
+				#if DEBUG_ESP
+				DbgPrint("[STACK] [Thread %08x] Old ESP max %08x [New ESP max %08x]\n", current_t->address, current_t->esp_max, saved_esp);
+				#endif
+				current_t->esp_max = saved_esp;
+			}
+		} else {
+			#if DEBUG_ESP
+			DbgPrint("[STACK] [Thread %08x] Old ESP min %08x [New ESP min %08x]\n", current_t->address, current_t->esp_min, saved_esp);
+			#endif
+			current_t->esp_min = saved_esp;
+		}
+	}
+}
+*/
+
+void print_stats(FILE * trace, PROCESS_ENV * pe) {
+
+	for (int i = 0; i < 2048; i++) {
+        if(pe->lookup_table[i] != -1) {
+            fprintf(trace,"[-] Thread stack range [%p, %p]\n", pe->thread_envs[pe->lookup_table[i]]->stack_range[0], pe->thread_envs[pe->lookup_table[i]]->stack_range[1]);
+            fprintf(trace,"[-] Thread (%p) wrote %llu stack, %llu data, and %llu selse\n", i,
+				pe->thread_envs[pe->lookup_table[i]]->stack_counter, 
+				pe->thread_envs[pe->lookup_table[i]]->data_counter,
+				pe->thread_envs[pe->lookup_table[i]]->heap_counter);
+        }
+    }
+	/*
+	ULONGLONG total		= 0, tmp_total		= 0;
+			ULONGLONG stack		= 0, tmp_stack		= 0;
+			ULONGLONG data		= 0, tmp_data		= 0;
+			ULONGLONG heap		= 0, tmp_heap		= 0;
+			ULONGLONG g_stack	= 0, tmp_g_stack	= 0;
+			ULONGLONG g_data	= 0, tmp_g_data		= 0;
+			ULONGLONG g_heap	= 0, tmp_g_heap		= 0;
+
+			total = _attachedProcessesENV[p_index].bytecounter;
+			for(int j = 0; j < MAX_THREADS; j++) {
+				if(!THREAD_EXISTS(_attachedProcessesENV[p_index].threads, j))
+					continue;
+				stack	+= _attachedProcessesENV[p_index].threads[j].stack_counter;
+				data	+= _attachedProcessesENV[p_index].threads[j].data_counter;
+				heap	+= _attachedProcessesENV[p_index].threads[j].heap_counter;
+				g_stack += _attachedProcessesENV[p_index].threads[j].global_stack_counter;
+				g_data  += _attachedProcessesENV[p_index].threads[j].global_data_counter;
+				g_heap	+= _attachedProcessesENV[p_index].threads[j].global_heap_counter;
+			}
+
+			tmp_total		= total;
+			tmp_stack		= stack;
+			tmp_data		= data;
+			tmp_heap		= heap;
+			tmp_g_stack		= g_stack;
+			tmp_g_data		= g_data;
+			tmp_g_heap		= g_heap;
+			total			-= old_total[i];
+			stack			-= old_stack[i];	
+			data			-= old_data[i];	
+			heap			-= old_heap[i];	
+			g_stack			-= old_g_stack[i]; 
+			g_data			-= old_g_data[i];	
+			g_heap			-= old_g_heap[i];
+			old_total[i]	= tmp_total;
+			old_stack[i]	= tmp_stack;
+			old_data[i]		= tmp_data;
+			old_heap[i]		= tmp_heap;
+			old_g_stack[i]	= tmp_g_stack;
+			old_g_data[i]	= tmp_g_data;
+			old_g_heap[i]	= tmp_g_heap;
+
+
+			DbgPrint("[MONITORY][P%02d] Process '%s' [%04d] wrote %I64u (S:%I64u - D:%I64u - H:%I64u) (GS:%I64u - GD:%I64u - GH:%I64u) bytes\n", i,
+					_attachedProcessesENV[p_index].name, 
+					_attachedProcessesENV[p_index].id,
+					total, stack, data, heap, 
+					g_stack, g_data, g_heap);
+	*/
+}
+
+struct ImageSectionInfo {
+      char SectionName[8];		//the macro is defined WinNT.h
       char *SectionAddress;
       int SectionSize;
-      ImageSectionInfo(const char* name)
-      {
+      ImageSectionInfo(const char* name) {
             strcpy(SectionName, name); 
        }
 };
-
-
-void get_dll_3(FILE * trace) {
-	char * dllImageBase = (char *) GetModuleHandle(NULL);
-	IMAGE_NT_HEADERS *pNtHdr = ImageNtHeader(GetModuleHandle(NULL));
-	IMAGE_SECTION_HEADER *pSectionHdr = (IMAGE_SECTION_HEADER *) (pNtHdr + 1);
-	ImageSectionInfo *pSectionInfo = NULL;
-	for ( int i = 0 ; i < pNtHdr->FileHeader.NumberOfSections ; i++ ) {
-		char *name = (char*) pSectionHdr->Name;
-		if ( memcmp(name, ".text", 5) == 0 ) {
-          pSectionInfo = new ImageSectionInfo(".text");
-          pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
-          pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
-		  fprintf(trace, "[-->] text %d (%p, %p)\n", pSectionInfo->SectionSize, pSectionInfo->SectionAddress, pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
-          break;
-		}
-		pSectionHdr++;
-	}
-}
-
-#define ASSIGN_RANGE(range, min, max)		range[0] = min; range[1] = max;
-
 
 VOID set_range(FILE * trace, OUT UINT32 * range, char * section) {
 	char * dllImageBase = (char *) GetModuleHandle(NULL);
@@ -60,7 +140,7 @@ VOID set_range(FILE * trace, OUT UINT32 * range, char * section) {
           pSectionInfo = new ImageSectionInfo(section);
           pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
           pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
-		  fprintf(trace, "[-->] REGION [%s] (%p, %p) (size=%d)\n", 
+		  fprintf(trace, "[!]   Region '%s': (%p, %p) (size=%d)\n", 
 			  section, 
 			  pSectionInfo->SectionAddress, 
 			  pSectionInfo->SectionAddress + pSectionInfo->SectionSize,
@@ -72,58 +152,60 @@ VOID set_range(FILE * trace, OUT UINT32 * range, char * section) {
 	}
 }
 
-
-
-UINT32 get_dll_1(FILE * trace) {
-	char * dllImageBase = (char *) GetModuleHandle(NULL);
-	IMAGE_NT_HEADERS *pNtHdr = ImageNtHeader(GetModuleHandle(NULL));
-	IMAGE_SECTION_HEADER *pSectionHdr = (IMAGE_SECTION_HEADER *) (pNtHdr + 1);
-	ImageSectionInfo *pSectionInfo = NULL;
-	for ( int i = 0 ; i < pNtHdr->FileHeader.NumberOfSections ; i++ ) {
-		char *name = (char*) pSectionHdr->Name;
-		if ( memcmp(name, ".data", 5) == 0 ) {
-          pSectionInfo = new ImageSectionInfo(".data");
-          pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
-          pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
-		  fprintf(trace, "[-->] data %d (%p, %p)\n", pSectionInfo->SectionSize, pSectionInfo->SectionAddress, pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
-          return (UINT32) pSectionInfo->SectionAddress;
-		}
-		pSectionHdr++;
+__declspec(naked) PLDR_DATA_ENTRY firstLdrDataEntry() {
+	__asm{
+		mov eax, fs:[0x30]		// PEB
+		mov eax, [eax+0x0C]		// PEB_LDR_DATA
+		mov eax, [eax+0x1C]		//InInitializationOrderModuleList
+		retn
 	}
 }
 
-UINT32 get_dll_2(FILE * trace) {
-	char * dllImageBase = (char *) GetModuleHandle(NULL);
-	IMAGE_NT_HEADERS *pNtHdr = ImageNtHeader(GetModuleHandle(NULL));
-	IMAGE_SECTION_HEADER *pSectionHdr = (IMAGE_SECTION_HEADER *) (pNtHdr + 1);
-	ImageSectionInfo *pSectionInfo = NULL;
-	for ( int i = 0 ; i < pNtHdr->FileHeader.NumberOfSections ; i++ ) {
-		char *name = (char*) pSectionHdr->Name;
-		if ( memcmp(name, ".data", 5) == 0 ) {
-          pSectionInfo = new ImageSectionInfo(".data");
-          pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
-          pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
-		  fprintf(trace, "[-->] data %d (%p, %p)\n", pSectionInfo->SectionSize, pSectionInfo->SectionAddress, pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
-          return (UINT32) pSectionInfo->SectionAddress + pSectionInfo->SectionSize;
-		}
-		pSectionHdr++;
-	}
-}
-
-void printdlls(FILE * trace) {
+void pe_fill_dlls(FILE * trace, THREAD_ENV *tenv) {
+		
+	ANSI_STRING temp;
+	HMODULE hDLL = LoadLibrary("ntdll.dll");
 	
-	char * dllImageBase = (char *) GetModuleHandle(NULL);
-	IMAGE_NT_HEADERS *pNtHdr = ImageNtHeader(GetModuleHandle(NULL));
-	IMAGE_SECTION_HEADER *pSectionHdr = (IMAGE_SECTION_HEADER *) (pNtHdr + 1);
-	ImageSectionInfo *pSectionInfo = NULL;
-	for ( int i = 0 ; i < pNtHdr->FileHeader.NumberOfSections ; i++ ) {
-		char *name = (char*) pSectionHdr->Name;
-		pSectionInfo = new ImageSectionInfo(name);
-        pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
-		pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
-		fprintf(trace, "[%s] (%p, %p)\n", name, pSectionInfo->SectionAddress, pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
-		pSectionHdr++;
+	PLDR_DATA_ENTRY cursor;
+	cursor = firstLdrDataEntry();
+	while(cursor->BaseAddress) { 
+
+		DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
+
+		DWORD ImageBaseAddress = (DWORD) cursor->BaseAddress;
+		DWORD offset_dosheader = *(DWORD *) (ImageBaseAddress + LDR_DOSHEADER_OFFSET);
+		DWORD offset_ntheader = LDR_NTHEADER_OFFSET;
+		IMAGE_OPTIONAL_HEADER * header = (IMAGE_OPTIONAL_HEADER *) (ImageBaseAddress + offset_dosheader + offset_ntheader);
+
+		UINT32 dll_code_start = (UINT32) (ImageBaseAddress + header->BaseOfCode);
+		UINT32 dll_code_end = (UINT32) (ImageBaseAddress + header->BaseOfCode + header->SizeOfCode);
+
+		UINT32 dll_bss_start = (UINT32) (ImageBaseAddress + header->BaseOfData);
+		UINT32 dll_bss_end = (UINT32) (ImageBaseAddress + header->BaseOfData + header->SizeOfInitializedData + header->SizeOfUninitializedData);
+
+		fprintf(trace, "[!]   Module [%S] loaded at [%p] with EP at [%p]\n", 
+			cursor->BaseDllName.Buffer, 
+			cursor->BaseAddress, 
+			cursor->EntryPoint);
+		fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, header->SizeOfCode);
+		fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end,  header->SizeOfInitializedData + header->SizeOfUninitializedData);
+
+		dll->name = (char *) malloc(cursor->BaseDllName.Length+1);
+		sprintf_s(dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
+		dll->name[cursor->BaseDllName.Length] = '\0';
+
+		fprintf(trace, "[!!!]\t %s\n", dll->name);
+
+		dll->data_counter = 0;
+		dll->stack_counter = 0;
+		dll->heap_counter = 0;
+		ASSIGN_RANGE(dll->code_range, dll_code_start, dll_code_end);
+		ASSIGN_RANGE(dll->data_range, dll_bss_start, dll_bss_end);
+		
+		tenv->dll_envs[tenv->dll_count++] = dll;
+		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
 	}
+	FreeLibrary(hDLL);
 }
 
 void printend(FILE * trace) {
@@ -186,134 +268,4 @@ void printend(FILE * trace) {
 }
 
 
-typedef struct LDR_DATA_ENTRY {
-	LIST_ENTRY              InMemoryOrderModuleList;
-	PVOID                   BaseAddress;
-	PVOID                   EntryPoint;
-	ULONG                   SizeOfImage;
-	UNICODE_STRING          FullDllName;
-	UNICODE_STRING          BaseDllName;
-	ULONG                   Flags;
-	SHORT                   LoadCount;
-	SHORT                   TlsIndex;
-	LIST_ENTRY              HashTableEntry;
-	ULONG                   TimeDateStamp;
-} LDR_DATA_ENTRY, *PLDR_DATA_ENTRY;
 
-
-
-//__declspec(naked) PLDR_DATA_ENTRY firstLdrDataEntry() {
-__declspec(naked) PLDR_DATA_ENTRY firstLdrDataEntry() {
-	__asm{
-		mov eax, fs:[0x30] // PEB
-		mov eax, [eax+0x0C] // PEB_LDR_DATA
-		mov eax, [eax+0x1C] //InInitializationOrderModuleList
-		retn
-	}
-}
-
-
-/*
-ANSI_STRING temp;
-	RtlUnicodeStringToAnsiString(&temp,&module->BaseDllName,true);
-	DWORD address = (DWORD) module->BaseAddress;
-	DWORD offset_dosheader = *(DWORD *) (address + LDR_DOSHEADER_OFFSET);
-	DWORD offset_ntheader = LDR_NTHEADER_OFFSET;
-	IMAGE_OPTIONAL_HEADER * header = (IMAGE_OPTIONAL_HEADER *) (address + offset_dosheader + offset_ntheader);
-
-	int len;
-	if(temp.Length > MAX_STRING_LEN-1) {
-		len = MAX_STRING_LEN-1;
-	} else {
-		len = temp.Length;
-	}
-	RtlCopyMemory(dll_name, temp.Buffer, len);	
-	dll_name[len] = '\0';
-
-	*dll_code_start = (header->BaseOfCode + address); // address == header->ImageBase
-	*dll_code_end = (header->BaseOfCode + address + header->SizeOfCode);
-
-	PAGE_RANGE_ROUND_MAX(*dll_code_end);
-	*dll_data_start = *dll_code_end + 1;
-
-	*dll_data_end = *dll_data_start + (header->SizeOfInitializedData + header->SizeofUninitializedData);
-	PAGE_RANGE_ROUND_MAX(*dll_data_end);
-*/
-
-#define LDR_DOSHEADER_OFFSET			0x03c
-#define LDR_NTHEADER_OFFSET				0x18
-
-void printdetails(FILE * trace, DWORD ImageBaseAddress) {
-	DWORD offset_dosheader = *(DWORD *) (ImageBaseAddress + LDR_DOSHEADER_OFFSET);
-	DWORD offset_ntheader = LDR_NTHEADER_OFFSET;
-	IMAGE_OPTIONAL_HEADER * header = (IMAGE_OPTIONAL_HEADER *) (ImageBaseAddress + offset_dosheader + offset_ntheader);
-
-	ULONG * dll_code_start = (ULONG *) (ImageBaseAddress + header->BaseOfCode);
-	ULONG * dll_code_end = (ULONG *) (ImageBaseAddress + header->BaseOfCode + header->SizeOfCode);
-
-	ULONG * dll_bss_start = (ULONG *) (ImageBaseAddress + header->BaseOfData);
-	ULONG * dll_bss_end = (ULONG *) (ImageBaseAddress + header->BaseOfData + header->SizeOfInitializedData + header->SizeOfUninitializedData);
-
-
-	fprintf(trace, "\t Code range (%p,%p) (size)\n", dll_code_start, dll_code_end);
-	fprintf(trace, "\t Data range (%p,%p) (size)\n", dll_bss_start, dll_bss_end);
-
-}
-
-void pe_fill_dlls(FILE * trace, THREAD_ENV *tenv) {
-	
-	PLDR_DATA_ENTRY cursor;
-	cursor = firstLdrDataEntry();
-	while(cursor->BaseAddress) { 
-		fprintf(trace, "Module [%S] loaded at [%p] with entrypoint at [%p]\n", 
-			cursor->BaseDllName.Buffer, 
-			cursor->BaseAddress, 
-			cursor->EntryPoint);
-		printdetails(trace, (DWORD) cursor->BaseAddress);
-
-
-
-		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
-	}
-}
-
-void printmod(FILE * trace) {
-	
-	PLDR_DATA_ENTRY cursor;
-	cursor = firstLdrDataEntry();
-	while(cursor->BaseAddress) { 
-		fprintf(trace, "Module [%S] loaded at [%p] with entrypoint at [%p]\n", 
-			cursor->BaseDllName.Buffer, 
-			cursor->BaseAddress, 
-			cursor->EntryPoint);
-		printdetails(trace, (DWORD) cursor->BaseAddress);
-		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
-	}
-}
-
-// divide by zero exception
-int DivideByZero()
-{
-
-    if(1) {
-        return 1;
-    }
-
-    volatile unsigned int zero;
-    unsigned int i;
-    __try 
-    { 
-        fprintf(stderr, "Going to divide by zero\n");
-        zero = 0;
-        i  = 1 / zero;
-        return 0;
-    } 
-    __except(GetExceptionCode() == EXCEPTION_INT_DIVIDE_BY_ZERO ? EXCEPTION_EXECUTE_HANDLER : 
-        EXCEPTION_CONTINUE_SEARCH)
-    { 
-        fprintf(stderr, "Catching divide by zero\n");
-        fflush(stderr);
-        return 1;
-    }
-    return 0;
-}
