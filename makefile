@@ -9,12 +9,12 @@ TARGET_PID=$(shell .\\pgrep.cmd $(TARGET_PNAME))
 PINTOOL_FILE=$(PINTOOL_NAME).dll
 PIN_ROOT=..\\pin
 PIN_EXE=$(PIN_ROOT)\\pin.exe
-CWD=C:\\Users\\Stefano\\Desktop\\mepropin
+CWD=C:\\Users\\Stefano\\mepropin
 
 TOOL_ROOTS := mepro
 export TOOL_ROOTS
 
-OBJECT_ROOTS := winapi
+OBJECT_ROOTS := winapi classifier
 export OBJECT_ROOTS
 
 # This defines any static libraries (archives), that need to be built.
@@ -22,9 +22,9 @@ LIBS := Dbghelp.lib
 export LIBS
 
 
-TARGET_BIN=C:\\Users\\Stefano\\Desktop\\repmove.exe
+TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\repmove.exe
 
-all: clean ia32 attach log  
+all: clean ia32 exec log  
 
 ia32:
 	$(MAKE) -f makefile.pin 'PIN_ROOT=$(PIN_ROOT)' TARGET=ia32

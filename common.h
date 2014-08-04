@@ -1,6 +1,8 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#define MEPRO_LOG "C:\\Users\\Stefano\\mepropin\\pinatrace.out"
+
 #if !defined(PIN_H)
 #define ADDRINT UINT32
 #endif

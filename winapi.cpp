@@ -193,9 +193,6 @@ void pe_fill_dlls(FILE * trace, THREAD_ENV *tenv) {
 		dll->name = (char *) malloc(cursor->BaseDllName.Length+1);
 		sprintf_s(dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
 		dll->name[cursor->BaseDllName.Length] = '\0';
-
-		fprintf(trace, "[!!!]\t %s\n", dll->name);
-
 		dll->data_counter = 0;
 		dll->stack_counter = 0;
 		dll->heap_counter = 0;

@@ -9,7 +9,7 @@ include $(CONFIG_ROOT)/makefile.config
 include $(TOOLS_ROOT)/Config/makefile.default.rules
 
 # Build
-$(OBJDIR)mepro$(PINTOOL_SUFFIX): $(OBJDIR)mepro$(OBJ_SUFFIX) $(OBJDIR)winapi$(OBJ_SUFFIX) 
+$(OBJDIR)mepro$(PINTOOL_SUFFIX): $(OBJDIR)mepro$(OBJ_SUFFIX) $(OBJDIR)winapi$(OBJ_SUFFIX) $(OBJDIR)classifier$(OBJ_SUFFIX) 
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) Dbghelp.lib
 
 # Build the intermediate object file.

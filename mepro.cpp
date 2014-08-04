@@ -16,27 +16,13 @@ BUFFER_ID bufId;
 
 #define NUM_BUF_PAGES 1024
 
-typedef struct {
-     PVOID ExceptionList;
-     PVOID StackBase;
-     PVOID StackLimit;
-     PVOID SubSystemTib;
-     union
-     {
-          PVOID FiberData;
-          ULONG Version;
-     };
-     PVOID ArbitraryUserPointer;
-     PVOID Self;
-} NT_TIB;
-
+#define WRITES_DLL_WHITELIST_SCHEME			0x01
+#define WRITES_DLL_BLACKLIST_SCHEME			0x02
+#define WRITES_DLL_INCLUDE_SCHEME			(WRITES_DLL_BLACKLIST_SCHEME)
+#define WRITES_DLL_WHITELIST				"kernel32.dll", NULL
+#define WRITES_DLL_BLACKLIST				"USER32.dll", "ntdll.dll", NULL	
 
 PROCESS_ENV * pe;
-
-VOID RecordMemRead(VOID * ip, VOID * addr) {
-    fprintf(trace,"%p: R %p\n", ip, addr);
-}
-
 
 int DLL_getDllIndex(THREAD_ENV	* current_t, ADDRINT ip) {
 	for(int i = 0; i < current_t->dll_count; i++) {
@@ -46,12 +32,6 @@ int DLL_getDllIndex(THREAD_ENV	* current_t, ADDRINT ip) {
 	}
 	return current_t->dll_count;
 }
-
-#define WRITES_DLL_WHITELIST_SCHEME			0x01
-#define WRITES_DLL_BLACKLIST_SCHEME			0x02
-#define WRITES_DLL_INCLUDE_SCHEME			(WRITES_DLL_BLACKLIST_SCHEME)
-#define WRITES_DLL_WHITELIST				"kernel32.dll", NULL
-#define WRITES_DLL_BLACKLIST				"USER32.dll", "ntdll.dll", NULL	
 
 bool DLL_isInWriteBlackList(char *dll_name) {
 	static char* dll_blacklist[] = { WRITES_DLL_BLACKLIST };
@@ -76,17 +56,18 @@ bool DLL_isInWriteWhiteList(char *dll_name) {
 	return FALSE;
 }
 
-VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
+VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, INT32 mw, VOID * ip, VOID * addr) {
 
 	THREAD_ENV * current_t;
 	DLL_ENV * current_d;
+	//fprintf(trace, "[*] %p - %d\n", ctx, mw);
+	ADDRINT esp = 0;//PIN_GetContextReg(ctx, REG_INST_PTR);
+	pe->bytecounter += mw;
 
     if(pe->lookup_table[th_id] == -1) {
         pe->thread_envs[pe->thread_count] = (THREAD_ENV *) malloc(sizeof(THREAD_ENV));
         pe->lookup_table[th_id] = pe->thread_count;
         pe->thread_count++;
-
-		fprintf(trace, "[*] New thread %d (total=%d) detected (IP=%p, MEM=%p)\n", th_id, pe->thread_count, ip, addr);
 
 		UINT64 value;
 		UINT64 *teb64_address;
@@ -95,21 +76,18 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
             mov teb64_address, EAX
         }
 
-		PIN_SafeCopy (&value, teb64_address+0x100, sizeof(UINT64));
-		fprintf(trace, "[!]   TEB64 address *(%016X): %016X\n", teb64_address, *teb64_address);
-		fprintf(trace, "[!]     WOW64 flag = %value\n");
-		if(value == NULL) {
-			
-		}
-		
+		PIN_SafeCopy (&value, teb64_address+0x100, sizeof(UINT64));	
 		UINT32 stack_base;
 		UINT32 stack_limit;
 		UINT32 *teb32_address = (UINT32 *) teb64_address + (0x2000/4);
 
 		// REMEMBER POINTER ARITHMETIC
 		PIN_SafeCopy (&stack_base, teb32_address+1, sizeof(UINT32));
-		PIN_SafeCopy (&stack_limit, teb32_address+2, sizeof(UINT32));	
-		
+		PIN_SafeCopy (&stack_limit, teb32_address+2, sizeof(UINT32));
+
+		fprintf(trace, "[*] New thread %d (total=%d) detected (IP=%p, MEM=%p)\n", th_id, pe->thread_count, ip, addr);
+		fprintf(trace, "[!]   TEB64 address *(%016X): %016X\n", teb64_address, *teb64_address);
+		fprintf(trace, "[!]     WOW64 flag = %p\n", value);
 		fprintf(trace, "[!]   TEB32 address: %p\n", teb32_address);
 		fprintf(trace, "[!]     StackBase:	%p\n", stack_base);
 		fprintf(trace, "[!]     StackLimit:	%p\n", stack_limit);
@@ -117,16 +95,35 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
         pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_limit;
 		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_base;
 
+
+		/*
+		ADDRINT teb = PIN_GetContextReg(ctx,REG_SEG_FS_BASE);
+		ADDRINT stackTop;
+		ADDRINT stackBottom;
+		PIN_SafeCopy(&stackTop,((int*)teb+1),4);
+		PIN_SafeCopy(&stackBottom,((int*)teb+2),4);
+		*/
+
 		set_range(trace, pe->thread_envs[pe->lookup_table[th_id]]->data_range, ".data");
 		set_range(trace, pe->thread_envs[pe->lookup_table[th_id]]->code_range, ".text");
+
+		pe->thread_envs[pe->lookup_table[th_id]]->esp_max = 0;
+		pe->thread_envs[pe->lookup_table[th_id]]->esp_min = esp;
 		
 		pe_fill_dlls(trace, pe->thread_envs[pe->lookup_table[th_id]]);
 
-    }
-
+    } else {
+		if(esp > pe->thread_envs[pe->lookup_table[th_id]]->esp_min) {
+			current_t->esp_min = 0;
+			if(esp > pe->thread_envs[pe->lookup_table[th_id]]->esp_max) {
+				pe->thread_envs[pe->lookup_table[th_id]]->esp_max = esp;
+			}
+		} else {
+			pe->thread_envs[pe->lookup_table[th_id]]->esp_min = esp;
+		}
+	}
+	
 	current_t = pe->thread_envs[pe->lookup_table[th_id]];
-
-	pe->bytecounter += mw;
 	if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->code_range)) {
 		if(IS_WITHIN_RANGE((ADDRINT) addr, current_t->data_range)) {
 			current_t->data_counter += mw;
@@ -161,8 +158,8 @@ VOID RecordMemWrite(INT32 th_id, INT32 mw, VOID * ip, VOID * addr) {
 					current_d->stack_counter				+= mw;
 					current_t->global_stack_counter			+= mw;
 					if((ADDRINT) ip >= current_t->esp_max) {
-						current_d->slstack_counter				+= mw;
-						current_t->global_slstack_counter		+= mw;
+						current_d->slstack_counter			+= mw;
+						current_t->global_slstack_counter	+= mw;
 					}
 				} else {
 					current_d->heap_counter					+= mw;
@@ -210,6 +207,7 @@ VOID Instruction(INS ins, VOID *v) {
             INS_InsertPredicatedCall(
                 ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite,
                 IARG_THREAD_ID,
+				IARG_CONST_CONTEXT,
                 IARG_MEMORYWRITE_SIZE,
                 IARG_INST_PTR,  
                 IARG_MEMORYOP_EA, memOp,
@@ -273,7 +271,7 @@ int main(int argc, char *argv[]) {
 
 
 	//DivideByZero();
-	trace = fopen("C:\\Users\\Stefano\\Desktop\\mepropin\\pinatrace.out", "w");
+	trace = fopen(MEPRO_LOG, "w");
     //trace = fopen("C:\\temp\\pinatrace.out", "w");
 
 	if (trace == NULL) return 0;
