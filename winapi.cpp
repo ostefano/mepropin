@@ -3,120 +3,118 @@
 #include <stdio.h>
 #include <strsafe.h>
 #include <malloc.h>
-
-#include "winapi.h"
 #include <Dbghelp.h>
 #include <Winternl.h>
 #include <TlHelp32.h>
 
 #include "common.h"
+#include "winapi.h"
 
 #define LDR_DOSHEADER_OFFSET			0x03c
 #define LDR_NTHEADER_OFFSET				0x18
 
 typedef struct LDR_DATA_ENTRY {
-	LIST_ENTRY              InMemoryOrderModuleList;
-	PVOID                   BaseAddress;
-	PVOID                   EntryPoint;
-	ULONG                   SizeOfImage;
-	UNICODE_STRING          FullDllName;
-	UNICODE_STRING          BaseDllName;
-	ULONG                   Flags;
-	SHORT                   LoadCount;
-	SHORT                   TlsIndex;
-	LIST_ENTRY              HashTableEntry;
-	ULONG                   TimeDateStamp;
+	LIST_ENTRY		InMemoryOrderModuleList;
+	PVOID			BaseAddress;
+	PVOID			EntryPoint;
+	ULONG			SizeOfImage;
+	UNICODE_STRING 	FullDllName;
+	UNICODE_STRING 	BaseDllName;
+	ULONG			Flags;
+	SHORT			LoadCount;
+	SHORT			TlsIndex;
+	LIST_ENTRY		HashTableEntry;
+	ULONG			TimeDateStamp;
 } LDR_DATA_ENTRY, *PLDR_DATA_ENTRY;
 
 void get_process_name(char ** name, int pid) {
-    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
-    if(hSnapshot) {
-        PROCESSENTRY32 pe32;
-        pe32.dwSize = sizeof(PROCESSENTRY32);
-        if(Process32First(hSnapshot,&pe32)) {
-            do {
+	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
+	if(hSnapshot) {
+		PROCESSENTRY32 pe32;
+		pe32.dwSize = sizeof(PROCESSENTRY32);
+		if(Process32First(hSnapshot,&pe32)) {
+			do {
 				if(pe32.th32ProcessID == pid) {
 					*name = (char *) malloc(sizeof(pe32.szExeFile));
 					strcpy(*name, pe32.szExeFile);
 					break;
 				}
-           
-            } while(Process32Next(hSnapshot,&pe32));
-         }
-         CloseHandle(hSnapshot);
-    }
+			} while(Process32Next(hSnapshot,&pe32));
+		 }
+		 CloseHandle(hSnapshot);
+	}
 }
 
 void print_stats(FILE * trace, PROCESS_ENV * pe) {
 
 	for (int i = 0; i < 2048; i++) {
-        if(pe->lookup_table[i] != -1) {
-            fprintf(trace,"[-] Thread stack range [%p, %p]\n", pe->thread_envs[pe->lookup_table[i]]->stack_range[0], pe->thread_envs[pe->lookup_table[i]]->stack_range[1]);
-            fprintf(trace,"[-] Thread (%p) wrote %llu stack, %llu data, and %llu selse\n", i,
+		if(pe->lookup_table[i] != -1) {
+			fprintf(trace,"[-] Thread stack range [%p, %p]\n", pe->thread_envs[pe->lookup_table[i]]->stack_range[0], pe->thread_envs[pe->lookup_table[i]]->stack_range[1]);
+			fprintf(trace,"[-] Thread (%p) wrote %llu stack, %llu data, and %llu selse\n", i,
 				pe->thread_envs[pe->lookup_table[i]]->stack_counter, 
 				pe->thread_envs[pe->lookup_table[i]]->data_counter,
 				pe->thread_envs[pe->lookup_table[i]]->heap_counter);
-        }
-    }
+		}
+	}
+
 	/*
 	ULONGLONG total		= 0, tmp_total		= 0;
-			ULONGLONG stack		= 0, tmp_stack		= 0;
-			ULONGLONG data		= 0, tmp_data		= 0;
-			ULONGLONG heap		= 0, tmp_heap		= 0;
-			ULONGLONG g_stack	= 0, tmp_g_stack	= 0;
-			ULONGLONG g_data	= 0, tmp_g_data		= 0;
-			ULONGLONG g_heap	= 0, tmp_g_heap		= 0;
+	ULONGLONG stack		= 0, tmp_stack		= 0;
+	ULONGLONG data		= 0, tmp_data		= 0;
+	ULONGLONG heap		= 0, tmp_heap		= 0;
+	ULONGLONG g_stack	= 0, tmp_g_stack	= 0;
+	ULONGLONG g_data	= 0, tmp_g_data		= 0;
+	ULONGLONG g_heap	= 0, tmp_g_heap		= 0;
 
-			total = _attachedProcessesENV[p_index].bytecounter;
-			for(int j = 0; j < MAX_THREADS; j++) {
-				if(!THREAD_EXISTS(_attachedProcessesENV[p_index].threads, j))
-					continue;
-				stack	+= _attachedProcessesENV[p_index].threads[j].stack_counter;
-				data	+= _attachedProcessesENV[p_index].threads[j].data_counter;
-				heap	+= _attachedProcessesENV[p_index].threads[j].heap_counter;
-				g_stack += _attachedProcessesENV[p_index].threads[j].global_stack_counter;
-				g_data  += _attachedProcessesENV[p_index].threads[j].global_data_counter;
-				g_heap	+= _attachedProcessesENV[p_index].threads[j].global_heap_counter;
-			}
+	total = _attachedProcessesENV[p_index].bytecounter;
+	for(int j = 0; j < MAX_THREADS; j++) {
+		if(!THREAD_EXISTS(_attachedProcessesENV[p_index].threads, j))
+			continue;
+		stack	+= _attachedProcessesENV[p_index].threads[j].stack_counter;
+		data	+= _attachedProcessesENV[p_index].threads[j].data_counter;
+		heap	+= _attachedProcessesENV[p_index].threads[j].heap_counter;
+		g_stack += _attachedProcessesENV[p_index].threads[j].global_stack_counter;
+		g_data  += _attachedProcessesENV[p_index].threads[j].global_data_counter;
+		g_heap	+= _attachedProcessesENV[p_index].threads[j].global_heap_counter;
+	}
 
-			tmp_total		= total;
-			tmp_stack		= stack;
-			tmp_data		= data;
-			tmp_heap		= heap;
-			tmp_g_stack		= g_stack;
-			tmp_g_data		= g_data;
-			tmp_g_heap		= g_heap;
-			total			-= old_total[i];
-			stack			-= old_stack[i];	
-			data			-= old_data[i];	
-			heap			-= old_heap[i];	
-			g_stack			-= old_g_stack[i]; 
-			g_data			-= old_g_data[i];	
-			g_heap			-= old_g_heap[i];
-			old_total[i]	= tmp_total;
-			old_stack[i]	= tmp_stack;
-			old_data[i]		= tmp_data;
-			old_heap[i]		= tmp_heap;
-			old_g_stack[i]	= tmp_g_stack;
-			old_g_data[i]	= tmp_g_data;
-			old_g_heap[i]	= tmp_g_heap;
+	tmp_total		= total;
+	tmp_stack		= stack;
+	tmp_data		= data;
+	tmp_heap		= heap;
+	tmp_g_stack		= g_stack;
+	tmp_g_data		= g_data;
+	tmp_g_heap		= g_heap;
+	total			-= old_total[i];
+	stack			-= old_stack[i];	
+	data			-= old_data[i];	
+	heap			-= old_heap[i];	
+	g_stack			-= old_g_stack[i]; 
+	g_data			-= old_g_data[i];	
+	g_heap			-= old_g_heap[i];
+	old_total[i]	= tmp_total;
+	old_stack[i]	= tmp_stack;
+	old_data[i]		= tmp_data;
+	old_heap[i]		= tmp_heap;
+	old_g_stack[i]	= tmp_g_stack;
+	old_g_data[i]	= tmp_g_data;
+	old_g_heap[i]	= tmp_g_heap;
 
-
-			DbgPrint("[MONITORY][P%02d] Process '%s' [%04d] wrote %I64u (S:%I64u - D:%I64u - H:%I64u) (GS:%I64u - GD:%I64u - GH:%I64u) bytes\n", i,
-					_attachedProcessesENV[p_index].name, 
-					_attachedProcessesENV[p_index].id,
-					total, stack, data, heap, 
-					g_stack, g_data, g_heap);
+	DbgPrint("[MONITORY][P%02d] Process '%s' [%04d] wrote %I64u (S:%I64u - D:%I64u - H:%I64u) (GS:%I64u - GD:%I64u - GH:%I64u) bytes\n", i,
+		_attachedProcessesENV[p_index].name, 
+		_attachedProcessesENV[p_index].id,
+		total, stack, data, heap, 
+		g_stack, g_data, g_heap);
 	*/
 }
 
 struct ImageSectionInfo {
-      char SectionName[8];		//the macro is defined WinNT.h
-      char *SectionAddress;
-      int SectionSize;
-      ImageSectionInfo(const char* name) {
-            strcpy(SectionName, name); 
-       }
+	char SectionName[8];		//the macro is defined WinNT.h
+	char *SectionAddress;
+	int SectionSize;
+	ImageSectionInfo(const char* name) {
+		strcpy(SectionName, name); 
+	}
 };
 
 VOID set_range(FILE * trace, OUT UINT32 * range, char * section) {
@@ -127,16 +125,16 @@ VOID set_range(FILE * trace, OUT UINT32 * range, char * section) {
 	for ( int i = 0 ; i < pNtHdr->FileHeader.NumberOfSections ; i++ ) {
 		char *name = (char*) pSectionHdr->Name;
 		if ( memcmp(name, section, 5) == 0 ) {
-          pSectionInfo = new ImageSectionInfo(section);
-          pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
-          pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
-		  fprintf(trace, "[!]   Region '%s': (%p, %p) (size=%d)\n", 
-			  section, 
-			  pSectionInfo->SectionAddress, 
-			  pSectionInfo->SectionAddress + pSectionInfo->SectionSize,
-			  pSectionInfo->SectionSize);
-          ASSIGN_RANGE(range, (UINT32) pSectionInfo->SectionAddress, (UINT32) pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
-		  break;	  
+			pSectionInfo = new ImageSectionInfo(section);
+			pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
+			pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
+			fprintf(trace, "[!]   Region '%s': (%p, %p) (size=%d)\n", 
+				section, 
+				pSectionInfo->SectionAddress, 
+				pSectionInfo->SectionAddress + pSectionInfo->SectionSize,
+				pSectionInfo->SectionSize);
+			ASSIGN_RANGE(range, (UINT32) pSectionInfo->SectionAddress, (UINT32) pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
+			break;	  
 		}
 		pSectionHdr++;
 	}
@@ -295,11 +293,10 @@ bool DLL_isInWriteWhiteList(char *dll_name) {
 	return FALSE;
 }
 
-
 void print_heaps_info(FILE * trace) {
 
 	//get all the heaps in the process
-    HANDLE heaps [100];
+	HANDLE heaps [100];
 	DWORD c = ::GetProcessHeaps (100, heaps);
 	fprintf (trace, "The process has %d heaps.\n", c);
 
@@ -312,20 +309,20 @@ void print_heaps_info(FILE * trace) {
 		ULONG heap_info = 0;
 		SIZE_T ret_size = 0;
 
-        if (::HeapQueryInformation (heaps [i], HeapCompatibilityInformation, &heap_info, sizeof (heap_info), &ret_size)) {
+		if (::HeapQueryInformation (heaps [i], HeapCompatibilityInformation, &heap_info, sizeof (heap_info), &ret_size)) {
 			//show the heap attributes
 
 			switch (heap_info) {
 				case 0:
 					fprintf (trace, "Heap %d is a regular heap.\n", (i + 1));
 					break;
-                case 1:
+				case 1:
 					fprintf (trace, "Heap %d is a heap with look-asides (fast heap).\n", (i + 1));
 					break;
 				case 2:
 					fprintf (trace, "Heap %d is a LFH (low-fragmentation) heap.\n", (i + 1));
 					break;
-                default:
+				default:
 					fprintf (trace, "Heap %d is of unknown type.\n", (i + 1));
 					break;
 			}
@@ -334,25 +331,22 @@ void print_heaps_info(FILE * trace) {
 				fprintf (trace, " This the DEFAULT process heap.\n");
 			}
 
-            if (heaps [i] == crt_heap) {
+			if (heaps [i] == crt_heap) {
 				fprintf (trace, " This the heap used by the CRT.\n");  
 			}
 
-            //walk the heap and show each allocated block inside it
+			//walk the heap and show each allocated block inside it
 			//(the attributes of each entry will differ between
 			//DEBUG and RELEASE builds)
 
-            PROCESS_HEAP_ENTRY entry;
-            memset (&entry, 0, sizeof (entry));
-            int count = 0;
-            while (::HeapWalk (heaps [i], &entry)) {
+			PROCESS_HEAP_ENTRY entry;
+			memset (&entry, 0, sizeof (entry));
+			int count = 0;
+			while (::HeapWalk (heaps [i], &entry)) {
 				if (entry.wFlags & PROCESS_HEAP_ENTRY_BUSY) {
 					fprintf (trace, " Allocated entry %d: size: %d, overhead: %d.\n", ++count, entry.cbData, entry.cbOverhead);
-                }
+				}
 			}
 		}
 	}
 }
-
-
-
