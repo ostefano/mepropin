@@ -15,6 +15,17 @@ typedef void * PVOID;
 typedef unsigned long ULONG;
 
 
+#define WRITES_STACK_ALL_SCHEME				0x01
+#define WRITES_STACK_LLS_SCHEME				0x02
+#define WRITES_STACK_SCHEME					(WRITES_STACK_ALL_SCHEME)
+
+#define WRITES_DLL_WHITELIST_SCHEME			0x01
+#define WRITES_DLL_BLACKLIST_SCHEME			0x02
+#define WRITES_DLL_INCLUDE_SCHEME			(WRITES_DLL_BLACKLIST_SCHEME)
+#define WRITES_DLL_WHITELIST				"kernel32.dll", NULL
+#define WRITES_DLL_BLACKLIST				"USER32.dll", "ntdll.dll", NULL	
+
+
 typedef struct {
 	char * name;
 

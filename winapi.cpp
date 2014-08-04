@@ -7,13 +7,12 @@
 #include "winapi.h"
 #include <Dbghelp.h>
 #include <Winternl.h>
+#include <TlHelp32.h>
 
 #include "common.h"
 
 #define LDR_DOSHEADER_OFFSET			0x03c
 #define LDR_NTHEADER_OFFSET				0x18
-
-typedef NTSTATUS(*RtlUnicodeStringToAnsiStringRev)(PANSI_STRING, PCUNICODE_STRING, BOOLEAN);
 
 typedef struct LDR_DATA_ENTRY {
 	LIST_ENTRY              InMemoryOrderModuleList;
@@ -29,33 +28,24 @@ typedef struct LDR_DATA_ENTRY {
 	ULONG                   TimeDateStamp;
 } LDR_DATA_ENTRY, *PLDR_DATA_ENTRY;
 
-/*
-
-
-VOID UpdateESPlimits(int p_index, ULONG saved_esp, ULONG thread_address) {
-	ASSERT(saved_esp != 0);
-	// Update the ESPs only if the thread is not new
-	int t_index = THREAD_getThreadIndex(p_index, thread_address);
-	if(t_index != -1) {
-		THREAD_ENV * current_t = &_attachedProcessesENV[p_index].threads[t_index];
-		ASSERT(current_t != NULL);
-		if(saved_esp > current_t->esp_min) {
-			current_t->esp_min = 0;
-			if(saved_esp > current_t->esp_max) {
-				#if DEBUG_ESP
-				DbgPrint("[STACK] [Thread %08x] Old ESP max %08x [New ESP max %08x]\n", current_t->address, current_t->esp_max, saved_esp);
-				#endif
-				current_t->esp_max = saved_esp;
-			}
-		} else {
-			#if DEBUG_ESP
-			DbgPrint("[STACK] [Thread %08x] Old ESP min %08x [New ESP min %08x]\n", current_t->address, current_t->esp_min, saved_esp);
-			#endif
-			current_t->esp_min = saved_esp;
-		}
-	}
+void get_process_name(char ** name, int pid) {
+    HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
+    if(hSnapshot) {
+        PROCESSENTRY32 pe32;
+        pe32.dwSize = sizeof(PROCESSENTRY32);
+        if(Process32First(hSnapshot,&pe32)) {
+            do {
+				if(pe32.th32ProcessID == pid) {
+					*name = (char *) malloc(sizeof(pe32.szExeFile));
+					strcpy(*name, pe32.szExeFile);
+					break;
+				}
+           
+            } while(Process32Next(hSnapshot,&pe32));
+         }
+         CloseHandle(hSnapshot);
+    }
 }
-*/
 
 void print_stats(FILE * trace, PROCESS_ENV * pe) {
 
@@ -161,16 +151,85 @@ __declspec(naked) PLDR_DATA_ENTRY firstLdrDataEntry() {
 	}
 }
 
-void pe_fill_dlls(FILE * trace, THREAD_ENV *tenv) {
+int pe_create_dll(FILE * trace, THREAD_ENV * tenv, ADDRINT ip) {
+
+	UINT32 page_size = 0x2000;
+
+	// FIXME ROUND DOWN AND UP PAGE
+	UINT32 dll_code_start = ip - page_size;
+	UINT32 dll_code_end = ip - page_size;
+
+	UINT32 dll_bss_start = dll_code_end;
+	UINT32 dll_bss_end = dll_bss_start + page_size;
+
+	DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
+	fprintf(trace, "[!]   Module [FAKE] loaded for address %p\n", ip);
+	fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, page_size);
+	fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end, page_size);
+
+	dll->name = (char *) malloc(strlen("FAKE")+1);
+	sprintf_s(dll->name, strlen("FAKE"), "FAKE");
+	dll->name[strlen("FAKE")] = '\0';
+	dll->data_counter = 0;
+	dll->stack_counter = 0;
+	dll->heap_counter = 0;
+	ASSIGN_RANGE(dll->code_range, dll_code_start, dll_code_end);
+	ASSIGN_RANGE(dll->data_range, dll_bss_start, dll_bss_end);
 		
-	ANSI_STRING temp;
-	HMODULE hDLL = LoadLibrary("ntdll.dll");
-	
+	tenv->dll_envs[tenv->dll_count++] = dll;
+	return tenv->dll_count-1;
+}
+
+int pe_fill_dll(FILE * trace, THREAD_ENV * tenv, ADDRINT ip) {
+		
 	PLDR_DATA_ENTRY cursor;
 	cursor = firstLdrDataEntry();
 	while(cursor->BaseAddress) { 
 
-		DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
+		DWORD ImageBaseAddress = (DWORD) cursor->BaseAddress;
+		DWORD offset_dosheader = *(DWORD *) (ImageBaseAddress + LDR_DOSHEADER_OFFSET);
+		DWORD offset_ntheader = LDR_NTHEADER_OFFSET;
+		IMAGE_OPTIONAL_HEADER * header = (IMAGE_OPTIONAL_HEADER *) (ImageBaseAddress + offset_dosheader + offset_ntheader);
+
+		UINT32 dll_code_start = (UINT32) (ImageBaseAddress + header->BaseOfCode);
+		UINT32 dll_code_end = (UINT32) (ImageBaseAddress + header->BaseOfCode + header->SizeOfCode);
+
+		if(ip >= dll_code_start && ip <= dll_code_end) {
+
+			UINT32 dll_bss_start = (UINT32) (ImageBaseAddress + header->BaseOfData);
+			UINT32 dll_bss_end = (UINT32) (ImageBaseAddress + header->BaseOfData + header->SizeOfInitializedData + header->SizeOfUninitializedData);
+		
+			DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
+			fprintf(trace, "[!]   Module [%S] loaded at [%p] with EP at [%p]\n", 
+				cursor->BaseDllName.Buffer, 
+				cursor->BaseAddress, 
+				cursor->EntryPoint);
+			fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, header->SizeOfCode);
+			fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end,  header->SizeOfInitializedData + header->SizeOfUninitializedData);
+
+			dll->name = (char *) malloc(cursor->BaseDllName.Length+1);
+			sprintf_s(dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
+			dll->name[cursor->BaseDllName.Length] = '\0';
+			dll->data_counter = 0;
+			dll->stack_counter = 0;
+			dll->heap_counter = 0;
+			ASSIGN_RANGE(dll->code_range, dll_code_start, dll_code_end);
+			ASSIGN_RANGE(dll->data_range, dll_bss_start, dll_bss_end);
+
+			tenv->dll_envs[tenv->dll_count++] = dll;
+			return tenv->dll_count-1;
+		}
+		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
+	}
+	return tenv->dll_count;
+}
+
+
+void pe_fill_dlls(FILE * trace, THREAD_ENV *tenv) {
+		
+	PLDR_DATA_ENTRY cursor;
+	cursor = firstLdrDataEntry();
+	while(cursor->BaseAddress) { 
 
 		DWORD ImageBaseAddress = (DWORD) cursor->BaseAddress;
 		DWORD offset_dosheader = *(DWORD *) (ImageBaseAddress + LDR_DOSHEADER_OFFSET);
@@ -183,6 +242,7 @@ void pe_fill_dlls(FILE * trace, THREAD_ENV *tenv) {
 		UINT32 dll_bss_start = (UINT32) (ImageBaseAddress + header->BaseOfData);
 		UINT32 dll_bss_end = (UINT32) (ImageBaseAddress + header->BaseOfData + header->SizeOfInitializedData + header->SizeOfUninitializedData);
 
+		DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
 		fprintf(trace, "[!]   Module [%S] loaded at [%p] with EP at [%p]\n", 
 			cursor->BaseDllName.Buffer, 
 			cursor->BaseAddress, 
@@ -202,11 +262,41 @@ void pe_fill_dlls(FILE * trace, THREAD_ENV *tenv) {
 		tenv->dll_envs[tenv->dll_count++] = dll;
 		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
 	}
-	FreeLibrary(hDLL);
 }
 
-void printend(FILE * trace) {
+int DLL_getDllIndex(THREAD_ENV	* current_t, ADDRINT ip) {
+	for(int i = 0; i < current_t->dll_count; i++) {
+		if(IS_WITHIN_RANGE(ip, (current_t->dll_envs[i]->code_range))) {
+			return i;
+		}
+	}
+	return current_t->dll_count;
+}
 
+bool DLL_isInWriteBlackList(char *dll_name) {
+	static char* dll_blacklist[] = { WRITES_DLL_BLACKLIST };
+	int i;
+	for(i=0;dll_blacklist[i]!=NULL;i++) {
+		if(!strncmp((char*)dll_name, dll_blacklist[i], strlen(dll_blacklist[i]))) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+bool DLL_isInWriteWhiteList(char *dll_name) {
+	static char* dll_whitelist[] = { WRITES_DLL_WHITELIST };
+	int i;
+	for(i=0;dll_whitelist[i]!=NULL;i++) {
+		if(!strncmp((char*)dll_name, dll_whitelist[i], strlen(dll_whitelist[i]))) {
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+
+void print_heaps_info(FILE * trace) {
 
 	//get all the heaps in the process
     HANDLE heaps [100];

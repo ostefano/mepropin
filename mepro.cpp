@@ -4,71 +4,32 @@
 #include "common.h"
 
 FILE * trace;
+PROCESS_ENV * pe;
 
 #ifndef TRACE_EN
     #define TRACE_EN 0
 #endif
-
-/*
- * The ID of the buffer
- */
-BUFFER_ID bufId;
-
-#define NUM_BUF_PAGES 1024
-
-#define WRITES_DLL_WHITELIST_SCHEME			0x01
-#define WRITES_DLL_BLACKLIST_SCHEME			0x02
-#define WRITES_DLL_INCLUDE_SCHEME			(WRITES_DLL_BLACKLIST_SCHEME)
-#define WRITES_DLL_WHITELIST				"kernel32.dll", NULL
-#define WRITES_DLL_BLACKLIST				"USER32.dll", "ntdll.dll", NULL	
-
-PROCESS_ENV * pe;
-
-int DLL_getDllIndex(THREAD_ENV	* current_t, ADDRINT ip) {
-	for(int i = 0; i < current_t->dll_count; i++) {
-		if(IS_WITHIN_RANGE(ip, (current_t->dll_envs[i]->code_range))) {
-			return i;
-		}
-	}
-	return current_t->dll_count;
-}
-
-bool DLL_isInWriteBlackList(char *dll_name) {
-	static char* dll_blacklist[] = { WRITES_DLL_BLACKLIST };
-	int i;
-	for(i=0;dll_blacklist[i]!=NULL;i++) {
-		if(!strncmp((char*)dll_name, dll_blacklist[i], strlen(dll_blacklist[i]))) {
-			//DbgPrint("[DLL] Ignoring writes from DLL %s\n", dll_name);
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
-
-bool DLL_isInWriteWhiteList(char *dll_name) {
-	static char* dll_whitelist[] = { WRITES_DLL_WHITELIST };
-	int i;
-	for(i=0;dll_whitelist[i]!=NULL;i++) {
-		if(!strncmp((char*)dll_name, dll_whitelist[i], strlen(dll_whitelist[i]))) {
-			return TRUE;
-		}
-	}
-	return FALSE;
-}
 
 VOID TestCall(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID *ip, void *addr) {
 	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
 	fprintf(trace, "[*] %p\n", esp);
 }
 
-ADDRINT AffectStack(INT32 th_id, VOID * addr) {
-	    if(pe->lookup_table[th_id] == -1) {
-			return 1;
-		}
-		if (IS_WITHIN_RANGE((ADDRINT) addr, pe->thread_envs[pe->lookup_table[th_id]]->stack_range)) {
-			return 0;
-		}
+ADDRINT AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
+	
+	if(pe->lookup_table[th_id] == -1) {
 		return 1;
+	}
+
+	// FIX ME - Check ESP values
+#if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
+	if (IS_WITHIN_RANGE((ADDRINT) addr, pe->thread_envs[pe->lookup_table[th_id]]->stack_range)) {
+#else if (WRITES_STACK_SCHEME & WRITES_STACK_LLS_SCHEME)
+	if (esp_value < pe->thread_envs[pe->lookup_table[th_id]]->esp_min) {
+#endif
+		return 0;
+	}
+	return 1;
 }
 
 VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID * addr) {
@@ -108,6 +69,7 @@ VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID
         pe->thread_envs[pe->lookup_table[th_id]]->stack_range[0] = (ADDRINT) stack_limit;
 		pe->thread_envs[pe->lookup_table[th_id]]->stack_range[1] = (ADDRINT) stack_base;
 
+		// FIXME: Alternative version to get stack top and stack bottom 
 		/*
 		ADDRINT teb = PIN_GetContextReg(ctx,REG_SEG_FS_BASE);
 		ADDRINT stackTop;
@@ -154,70 +116,45 @@ VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID
 			current_t->global_heap_counter += mw;
 		}
 	} else {
-		int dll_index = DLL_getDllIndex(pe->thread_envs[pe->lookup_table[th_id]], (ADDRINT) ip);
-		if(dll_index == pe->thread_envs[pe->lookup_table[th_id]]->dll_count) {
-			fprintf(trace, "[!] Code base unknown for instruction %p\n", ip);
-		} else {
-			current_d = pe->thread_envs[pe->lookup_table[th_id]]->dll_envs[dll_index];
+		int dll_index = DLL_getDllIndex(current_t, (ADDRINT) ip);
+		if(dll_index == current_t->dll_count) {
+			fprintf(trace, "[?] Code base unknown for address %p\n", ip);
+			dll_index = pe_fill_dll(trace, current_t, (ADDRINT) ip);
+			// We could recover BUT instead we ABORT since we are debugging
+			/*
+			if(dll_index == current_t->dll_count) {
+				fprintf(trace, "[!] Code base STILL unknown for address %p\n", ip);
+				dll_index = pe_create_dll(trace, current_t, (ADDRINT) ip);
+			}
+			*/
+			ASSERT(dll_index != current_t->dll_count, "[!] Code base STILL unknown!! Abort!!");
+			fprintf(trace, "[!] Code base now known for address %p\n", ip);
+		}
+
+		current_d = current_t->dll_envs[dll_index];
 #if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)		
-			if(!DLL_isInWriteBlackList(current_d->name)) {
+		if(!DLL_isInWriteBlackList(current_d->name)) {
 #else if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_WHITELIST_SCHEME)
-			if(DLL_isInWriteWhiteList(current_d->name)) {
+		if(DLL_isInWriteWhiteList(current_d->name)) {
 #endif
-				if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->data_range) || 
-					IS_WITHIN_RANGE((ADDRINT) ip, current_d->data_range)) {
-					current_d->data_counter					+= mw;
-					current_t->global_data_counter			+= mw;
-				} else if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->stack_range)) {
-					current_d->stack_counter				+= mw;
-					current_t->global_stack_counter			+= mw;
-					if((ADDRINT) ip >= current_t->esp_max) {
-						current_d->slstack_counter			+= mw;
-						current_t->global_slstack_counter	+= mw;
-					}
-				} else {
-					current_d->heap_counter					+= mw;
-					current_t->global_heap_counter			+= mw;
+			if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->data_range) || 
+				IS_WITHIN_RANGE((ADDRINT) ip, current_d->data_range)) {
+				current_d->data_counter					+= mw;
+				current_t->global_data_counter			+= mw;
+			} else if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->stack_range)) {
+				current_d->stack_counter				+= mw;
+				current_t->global_stack_counter			+= mw;
+				if((ADDRINT) ip >= current_t->esp_max) {
+					current_d->slstack_counter			+= mw;
+					current_t->global_slstack_counter	+= mw;
 				}
+			} else {
+				current_d->heap_counter					+= mw;
+				current_t->global_heap_counter			+= mw;
 			}
 		}	
 	}
 }
-
-struct MEMREF {
-    ADDRINT     pc;
-    ADDRINT     ea;
-    UINT32      size;
-    BOOL        read;
-	UINT32		tid;
-
-};
-
-VOID Trace(TRACE trace, VOID *v) {
-    for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl=BBL_Next(bbl)) {
-        for(INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins=INS_Next(ins)) {
-            UINT32 memoryOperands = INS_MemoryOperandCount(ins);
-            for (UINT32 memOp = 0; memOp < memoryOperands; memOp++) {
-                UINT32 refSize = INS_MemoryOperandSize(ins, memOp);
-                if (INS_MemoryOperandIsWritten(ins, memOp)) {
-                    INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufId,
-                                         IARG_INST_PTR, offsetof(struct MEMREF, pc),
-                                         IARG_MEMORYOP_EA, memOp, offsetof(struct MEMREF, ea),
-                                         IARG_UINT32, refSize, offsetof(struct MEMREF, size), 
-                                         IARG_BOOL, FALSE, offsetof(struct MEMREF, read),
-										 IARG_THREAD_ID, offsetof(struct MEMREF, tid), 
-                                         IARG_END);
-                }
-            }
-        }
-    }
-}
-
-//VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, INT32 mw, VOID * ip, VOID * addr)
-
-
-
-
 
 VOID Instruction(INS ins, VOID *v) {
     UINT32 memOperands = INS_MemoryOperandCount(ins);
@@ -246,11 +183,12 @@ VOID Instruction(INS ins, VOID *v) {
 				IARG_MEMORYWRITE_EA,
 				IARG_END);
 			*/
-			
+
+			// THIRD VERSION (READY TO BE THE FASTEST
 			INS_InsertIfPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)AffectStack, 
 				IARG_THREAD_ID, 
-				//IARG_REG_VALUE, REG_STACK_PTR,
 				IARG_MEMORYWRITE_EA,
+				IARG_REG_VALUE, REG_STACK_PTR,
 				IARG_END);
 
 			INS_InsertThenPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite, 
@@ -276,40 +214,66 @@ INT32 Usage() {
     return -1;
 }
 
+#if TRACE_EN
+
+BUFFER_ID bufId;
+
+#define NUM_BUF_PAGES 1024
+
+struct MEMREF {
+    ADDRINT     pc;
+    ADDRINT     ea;
+    UINT32      size;
+    BOOL        read;
+	UINT32		tid;
+
+};
 
 VOID * BufferFull(BUFFER_ID id, THREADID tid, const CONTEXT *ctxt, VOID *buf, UINT64 numElements, VOID *v) {
-    /*
-    This code will work - but it is very slow, so for testing purposes we run with the Knob turned off
-    */
-
-	return buf;
 	/*
-    if (KnobDoWriteToOutputFile)
-    {
+    if (KnobDoWriteToOutputFile) {
         PIN_GetLock(&fileLock, 1);
-
         struct MEMREF * reference=(struct MEMREF*)buf;
-
-        for(UINT64 i=0; i<numElements; i++, reference++)
-        {
-            if (reference->ea != 0)
+        for(UINT64 i=0; i<numElements; i++, reference++) {
+            if (reference->ea != 0) {
                 ofile << tid << "   "  << reference->pc << "   " << reference->ea << endl;
-        }
+			}
+		}
         PIN_ReleaseLock(&fileLock);
     }
-
-    return buf;
 	*/
+    return buf;
 }
 
 VOID ThreadStart(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
     // There is a new MLOG for every thread.  Opens the output file.
     //MLOG * mlog = new MLOG(tid);
-
-    // A thread will need to look up its MLOG, so save pointer in TLS
     //PIN_SetThreadData(mlog_key, mlog, tid);
 	fprintf(trace,"[*] Thread (%p) started\n", tid); 
 }
+
+VOID Trace(TRACE trace, VOID *v) {
+    for(BBL bbl = TRACE_BblHead(trace); BBL_Valid(bbl); bbl=BBL_Next(bbl)) {
+        for(INS ins = BBL_InsHead(bbl); INS_Valid(ins); ins=INS_Next(ins)) {
+            UINT32 memoryOperands = INS_MemoryOperandCount(ins);
+            for (UINT32 memOp = 0; memOp < memoryOperands; memOp++) {
+                UINT32 refSize = INS_MemoryOperandSize(ins, memOp);
+                if (INS_MemoryOperandIsWritten(ins, memOp)) {
+                    INS_InsertFillBuffer(ins, IPOINT_BEFORE, bufId,
+                                         IARG_INST_PTR, offsetof(struct MEMREF, pc),
+                                         IARG_MEMORYOP_EA, memOp, offsetof(struct MEMREF, ea),
+                                         IARG_UINT32, refSize, offsetof(struct MEMREF, size), 
+                                         IARG_BOOL, FALSE, offsetof(struct MEMREF, read),
+										 IARG_THREAD_ID, offsetof(struct MEMREF, tid), 
+                                         IARG_END);
+                }
+            }
+        }
+    }
+}
+
+#endif
+
 
 
 /* ===================================================================== */
@@ -317,22 +281,41 @@ VOID ThreadStart(THREADID tid, CONTEXT *ctxt, INT32 flags, VOID *v) {
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
 
-
-	//DivideByZero();
 	trace = fopen(MEPRO_LOG, "w");
-    //trace = fopen("C:\\temp\\pinatrace.out", "w");
-
 	if (trace == NULL) return 0;
     if (PIN_Init(argc, argv)) return Usage();
 
-	/* Playing with PE */
-    pe = (PROCESS_ENV *) malloc(sizeof(pe));
+	pe = (PROCESS_ENV *) malloc(sizeof(pe));
     memset(pe->lookup_table, -1, sizeof(INT32) * 2048);
     pe->thread_count = 0;
-    sprintf(pe->name, "TEST.exe", sizeof("TEST.exe"));
 
-
-
+	// FIXME: verify this voodoo code
+	char * name;
+	int pid;
+	for(int i = 0; i < argc; i++) {
+		if(strcmp(argv[i], "-pid") == 0) {
+			int pid = atoi(argv[i+1]);
+			get_process_name(&name, pid);
+			break;
+		}
+		if(strcmp(argv[i], "--") == 0) {
+			char *pfile;
+			pfile = argv[i+1] + strlen(argv[i+1]);
+			for (; pfile > argv[i+1]; pfile--) {
+				if ((*pfile == '\\') || (*pfile == '/')) {
+					pfile++;
+					break;
+				}
+			}
+			name = (char *) malloc(strlen(pfile) + 1);
+			strcpy(name, pfile);
+			name[strlen(pfile)] = '\0';
+		}
+		
+	}
+	fprintf(trace, "[*] Process name: %s\n", name);
+	strcpy(pe->name, name);
+	//sprintf(pe->name, "TEST.exe", sizeof("TEST.exe"));
 
 #if TRACE_EN
     fprintf(trace,"[*] Instrumentation TRACE MODE\n");

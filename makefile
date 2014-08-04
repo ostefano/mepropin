@@ -22,7 +22,7 @@ LIBS := Dbghelp.lib
 export LIBS
 
 
-#TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\repmove.exe
+TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\repmove.exe
 
 all: clean ia32 exec log  
 
