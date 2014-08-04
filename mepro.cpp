@@ -214,15 +214,15 @@ INT32 Usage() {
 
 #if TRACE_EN
 
+#define NUM_BUF_PAGES 	1024
+
 BUFFER_ID bufId;
 
-#define NUM_BUF_PAGES 1024
-
 struct MEMREF {
-	ADDRINT		 pc;
-	ADDRINT		 ea;
-	UINT32			size;
-		BOOL				read;
+	ADDRINT		pc;
+	ADDRINT		ea;
+	UINT32		size;
+	BOOL		read;
 	UINT32		tid;
 };
 
@@ -270,8 +270,6 @@ VOID Trace(TRACE trace, VOID *v) {
 }
 
 #endif
-
-
 
 /* ===================================================================== */
 /* Main */
