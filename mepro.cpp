@@ -278,11 +278,11 @@ int main(int argc, char *argv[]) {
 
 	trace = fopen(MEPRO_LOG, "w");
 	if (trace == NULL) return 0;
-		if (PIN_Init(argc, argv)) return Usage();
+	if (PIN_Init(argc, argv)) return Usage();
 
 	pe = (PROCESS_ENV *) malloc(sizeof(pe));
-		memset(pe->lookup_table, -1, sizeof(INT32) * 2048);
-		pe->thread_count = 0;
+	memset(pe->lookup_table, -1, sizeof(INT32) * 2048);
+	pe->thread_count = 0;
 
 	// FIXME: verify this voodoo code
 	char * name;
@@ -313,16 +313,16 @@ int main(int argc, char *argv[]) {
 	//sprintf(pe->name, "TEST.exe", sizeof("TEST.exe"));
 
 #if TRACE_EN
-		fprintf(trace,"[*] Instrumentation TRACE MODE\n");
+	fprintf(trace,"[*] Instrumentation TRACE MODE\n");
 	bufId = PIN_DefineTraceBuffer(sizeof(struct MEMREF), NUM_BUF_PAGES, BufferFull, 0);
 	TRACE_AddInstrumentFunction(Trace, 0);
 	PIN_AddThreadStartFunction(ThreadStart, 0);
 #else
-		fprintf(trace,"[*] Instrumentation INS MODE\n");
-		INS_AddInstrumentFunction(Instruction, 0);
+	fprintf(trace,"[*] Instrumentation INS MODE\n");
+	INS_AddInstrumentFunction(Instruction, 0);
 #endif
 
-		PIN_AddFiniFunction(Fini, 0);
-		PIN_StartProgram();
-		return 0;
+	PIN_AddFiniFunction(Fini, 0);
+	PIN_StartProgram();
+	return 0;
 }
