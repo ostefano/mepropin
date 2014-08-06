@@ -21,6 +21,22 @@
 #define WRITES_DLL_WHITELIST				"kernel32.dll", NULL
 #define WRITES_DLL_BLACKLIST				"USER32.dll", "ntdll.dll", NULL	
 
+#define ADD_UNKNOWN_DLLS					0
+#define PROTECT_FROM_RACE					1
+
+#if PROTECT_FROM_RACE
+#define ADD(a1,a2)		AtomicAdd(a1, a2)
+#else
+#define ADD(a1,a2)		a1 += a2
+#endif
+
+#if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)
+#define IS_MONITORED(n)		!DLL_isInWriteBlackList(n)
+#else
+#define IS_MONITORED(n)		DLL_isInWriteWhiteList(n)
+#endif
+
+
 typedef void * PVOID;
 typedef unsigned long ULONG;
 

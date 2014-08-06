@@ -27,6 +27,20 @@ typedef struct LDR_DATA_ENTRY {
 	ULONG			TimeDateStamp;
 } LDR_DATA_ENTRY, *PLDR_DATA_ENTRY;
 
+
+UINT16 AtomicInc(volatile UINT16& mem) {
+	return InterlockedIncrement16((short *)&mem);
+}
+
+UINT64 AtomicInc(volatile UINT64& mem) {
+	return InterlockedIncrement64((long long *)&mem);
+}
+
+UINT64 AtomicAdd(volatile UINT64& mem, UINT64 summand) {
+	return InterlockedExchangeAdd64((long long*)&mem, summand);
+}
+
+
 void get_process_name(char ** name, int pid) {
 	HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS,0);
 	if(hSnapshot) {

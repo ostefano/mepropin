@@ -16,4 +16,10 @@ int DLL_getDllIndex(THREAD_ENV * current_t, ADDRINT ip);
 bool DLL_isInWriteBlackList(char *dll_name);
 bool DLL_isInWriteWhiteList(char *dll_name);
 
+UINT16 AtomicInc(volatile UINT16& mem);
+UINT64 AtomicAdd(volatile UINT64& mem, UINT64 summand);
+UINT64 AtomicInc(volatile UINT64& mem);
+
+
+
 #endif
