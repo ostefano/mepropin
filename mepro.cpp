@@ -1,9 +1,5 @@
 #include <stdio.h>
 
-//#define BOOST_LIB_DIAGNOSTIC
-//#define BOOST_DATE_TIME_NO_LIB
-//#define BOOST_ALL_NO_LIB 1 
-
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
 #include "pin.H"
@@ -299,12 +295,12 @@ VOID Trace(TRACE trace, VOID *v) {
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
 
-	using namespace boost::interprocess;
+	//using namespace boost::interprocess;
 
 
 	//Create a shared memory object.
-	shared_memory_object shm (open_only, "MySharedMemory", read_only);
-
+	//shared_memory_object shm (open_or_create, "MySharedMemory", read_write);
+	//shared_memory_object::remove("MySharedMemory");
 
 	trace = fopen(MEPRO_LOG, "w");
 	if (trace == NULL) return 0;

@@ -98,7 +98,7 @@
     <ClCompile>
       <AdditionalOptions>/EHs- /EHa- %(AdditionalOptions)</AdditionalOptions>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>$(PinRoot)\source\include\pin;$(PinRoot)\source\include\pin\gen;$(PinRoot)\source\tools\InstLib;$(PinRoot)\extras\xed2-ia32\include;$(PinRoot)\extras\components\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(PinRoot)\source\include\pin;$(PinRoot)\source\include\pin\gen;$(PinRoot)\source\tools\InstLib;$(PinRoot)\extras\xed2-ia32\include;$(PinRoot)\extras\components\include;inc\;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>TARGET_IA32;HOST_IA32;TARGET_WINDOWS;BIGARRAY_MULTIPLIER=1;_CRT_SECURE_NO_DEPRECATE;_SECURE_SCL=0;WIN32</PreprocessorDefinitions>
       <MinimalRebuild>false</MinimalRebuild>
       <ExceptionHandling>
@@ -117,8 +117,8 @@
     </ClCompile>
     <Link>
       <AdditionalOptions>/export:main %(AdditionalOptions)</AdditionalOptions>
-      <AdditionalDependencies>pin.lib;libxed.lib;libcpmt.lib;libcmt.lib;pinvm.lib;kernel32.lib;ntdll-32.lib</AdditionalDependencies>
-      <AdditionalLibraryDirectories>$(PinRoot)\ia32\lib;$(PinRoot)\ia32\lib-ext;$(PinRoot)\extras\xed2-ia32\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>pin.lib;libxed.lib;libcpmt.lib;libcmt.lib;pinvm.lib;kernel32.lib;ntdll-32.lib;Dbghelp.lib;liblfds611.lib;Advapi32.lib</AdditionalDependencies>
+      <AdditionalLibraryDirectories>$(PinRoot)\ia32\lib;$(PinRoot)\ia32\lib-ext;$(PinRoot)\extras\xed2-ia32\lib;lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
       <GenerateDebugInformation>true</GenerateDebugInformation>

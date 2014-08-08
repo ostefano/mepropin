@@ -1,6 +1,10 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#include <boost/interprocess/offset_ptr.hpp>
+
+using namespace boost::interprocess;
+
 //#define ATTACHED_PROCESSES_MAX
 #define MEPRO_LOG 							"C:\\Users\\Stefano\\mepropin\\pinatrace.out"
 
@@ -82,5 +86,15 @@ typedef struct {
 	UINT16 thread_count;
 	THREAD_ENV * thread_envs[2048];
 } PROCESS_ENV;
+
+
+typedef struct {
+	UINT32 process_id;
+	CHAR name[64];
+	UINT64 bytecounter;
+	INT32 lookup_table[2048];
+	UINT16 thread_count;
+	offset_ptr<THREAD_ENV> thread_envs[2048];
+} SHM_PROCESS_ENV;
 
 #endif
