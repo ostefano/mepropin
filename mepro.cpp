@@ -1,14 +1,26 @@
 #include <stdio.h>
+
+//#define BOOST_LIB_DIAGNOSTIC
+//#define BOOST_DATE_TIME_NO_LIB
+//#define BOOST_ALL_NO_LIB 1 
+
+#include <boost/interprocess/shared_memory_object.hpp>
+#include <boost/interprocess/mapped_region.hpp>
 #include "pin.H"
 #include "winapi.h"
 #include "common.h"
 
+
 FILE * trace;
 PROCESS_ENV * pe;
+
+PROCESS_ENV ** attached_processes;
 
 #ifndef TRACE_EN
 	#define TRACE_EN 0
 #endif
+
+//using boost::interprocess;
 
 VOID TestCall(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID *ip, void *addr) {
 	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
@@ -287,6 +299,13 @@ VOID Trace(TRACE trace, VOID *v) {
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
 
+	using namespace boost::interprocess;
+
+
+	//Create a shared memory object.
+	shared_memory_object shm (open_only, "MySharedMemory", read_only);
+
+
 	trace = fopen(MEPRO_LOG, "w");
 	if (trace == NULL) return 0;
 	if (PIN_Init(argc, argv)) return Usage();
@@ -294,6 +313,9 @@ int main(int argc, char *argv[]) {
 	pe = (PROCESS_ENV *) malloc(sizeof(pe));
 	memset(pe->lookup_table, -1, sizeof(INT32) * 2048);
 	pe->thread_count = 0;
+
+
+	//attached_processes = (PROCESS_ENV **) calloc(32, sizeof(PROCESS_ENV *));
 
 	// FIXME: verify this voodoo code
 	char * name;

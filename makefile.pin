@@ -8,16 +8,20 @@ endif
 include $(CONFIG_ROOT)/makefile.config
 include $(TOOLS_ROOT)/Config/makefile.default.rules
 
+TOOL_LIBS := $(TOOL_LIBS) Dbghelp.lib liblfds611.lib Advapi32.lib
+TOOL_LPATHS := $(TOOL_LPATHS) /LIBPATH:lib\\ 
+TOOL_CXXFLAGS := $(TOOL_CXXFLAGS) /Iinc\\
+
 # Build
 $(OBJDIR)mepro$(PINTOOL_SUFFIX): $(OBJDIR)mepro$(OBJ_SUFFIX) $(OBJDIR)winapi$(OBJ_SUFFIX) $(OBJDIR)classifier$(OBJ_SUFFIX) 
-	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) Dbghelp.lib
+	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) 
 
 # Build the intermediate object file.
 $(OBJDIR)%$(OBJ_SUFFIX): %.cpp
 ifeq ($(TRACE),1)
 	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ /DTRACE_EN=1 $<
 else
-	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $<
+	$(CXX) $(TOOL_CXXFLAGS) $(COMP_OBJ)$@ $< 
 endif
 
 # Build the intermediate object file.

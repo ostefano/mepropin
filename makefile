@@ -17,11 +17,6 @@ export TOOL_ROOTS
 OBJECT_ROOTS := winapi classifier
 export OBJECT_ROOTS
 
-# This defines any static libraries (archives), that need to be built.
-LIBS := Dbghelp.lib
-export LIBS
-
-
 #TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\repmove.exe
 
 all: clean ia32 exec log  

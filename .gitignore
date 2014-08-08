@@ -13,7 +13,6 @@
 *.lai
 *.la
 *.a
-*.lib
 
 # Executables
 *.exe
@@ -25,3 +24,5 @@ obj-intel64/*
 mepropin.sdf
 mepropin.opensdf
 *.cod
+
+inc/boost/*

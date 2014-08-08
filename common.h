@@ -1,6 +1,7 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+//#define ATTACHED_PROCESSES_MAX
 #define MEPRO_LOG 							"C:\\Users\\Stefano\\mepropin\\pinatrace.out"
 
 #if !defined(PIN_H)
