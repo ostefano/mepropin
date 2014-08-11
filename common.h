@@ -87,14 +87,61 @@ typedef struct {
 	THREAD_ENV * thread_envs[2048];
 } PROCESS_ENV;
 
+#define MAX_CHAR_COUNT		128
+#define MAX_THREAD_COUNT	64
+#define MAX_DLL_COUNT		256
+#define MAX_PROCESS_COUNT	2
 
 typedef struct {
+	short max_char_count;
+	short max_thread_count;
+	short max_dll_count;
+} SHM_CONFIG;
+
+typedef struct {
+	CHAR name[MAX_CHAR_COUNT];
+	ADDRINT data_range[2];
+	ADDRINT code_range[2];
+	UINT64 llstack_counter;
+	UINT64 stack_counter;
+	UINT64 heap_counter;
+	UINT64 data_counter;
+} SHM_DLL_ENV;
+
+typedef struct {
+	UINT32 thread_id;
+
+	ADDRINT esp_max;
+	ADDRINT esp_min;
+
+	ADDRINT code_range[2];
+	ADDRINT data_range[2];
+	ADDRINT stack_range[2];
+
+	UINT64 llstack_counter;			// All the writes minus the dlls
+	UINT64 stack_counter;
+	UINT64 heap_counter;
+	UINT64 data_counter;
+
+	UINT64 global_slstack_counter;	// All the writes plus the dlls
+	UINT64 global_stack_counter;	
+	UINT64 global_heap_counter;
+	UINT64 global_data_counter;
+
+	UINT16	dll_count;
+	SHM_DLL_ENV	dll_envs[MAX_DLL_COUNT];
+} SHM_THREAD_ENV;
+
+
+typedef struct {
+	CHAR name[MAX_CHAR_COUNT];
 	UINT32 process_id;
-	CHAR name[64];
-	UINT64 bytecounter;
-	INT32 lookup_table[2048];
+	
+	UINT64 total_counter;
+
 	UINT16 thread_count;
-	offset_ptr<THREAD_ENV> thread_envs[2048];
+	SHM_THREAD_ENV thread_envs[MAX_THREAD_COUNT];
 } SHM_PROCESS_ENV;
+
 
 #endif

@@ -21,5 +21,9 @@ UINT64 AtomicAdd(volatile UINT64& mem, UINT64 summand);
 UINT64 AtomicInc(volatile UINT64& mem);
 
 
+VOID * CreateSharedRegion(char name[], int size_t);
+VOID CloseSharedRegion(char name[], VOID * region);
+
+
 
 #endif

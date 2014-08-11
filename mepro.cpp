@@ -1,10 +1,21 @@
-#include <stdio.h>
-
+//#include <stdio.h>
+/*
+namespace WINDOWS
+{
+#include <windows.h>
+	//using namespace WINDOWS;
+//#include <cstring>
+}
+*/
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <boost/interprocess/mapped_region.hpp>
 #include "pin.H"
 #include "winapi.h"
 #include "common.h"
+
+#include <stdio.h>
+
+using namespace std;
 
 
 FILE * trace;
@@ -290,10 +301,15 @@ VOID Trace(TRACE trace, VOID *v) {
 
 #endif
 
+
+SHM_PROCESS_ENV ** monitored_processes;
+
 /* ===================================================================== */
 /* Main */
 /* ===================================================================== */
 int main(int argc, char *argv[]) {
+
+
 
 	//using namespace boost::interprocess;
 
@@ -309,6 +325,15 @@ int main(int argc, char *argv[]) {
 	pe = (PROCESS_ENV *) malloc(sizeof(pe));
 	memset(pe->lookup_table, -1, sizeof(INT32) * 2048);
 	pe->thread_count = 0;
+
+
+	//monitored_processes = (SHM_PROCESS_ENV **) calloc(MAX_PROCESS_COUNT, sizeof(SHM_PROCESS_ENV));
+	fprintf(trace, "[*] Will use %d bytes of contigous memory\n", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+
+	monitored_processes = (SHM_PROCESS_ENV **)  CreateSharedRegion("test_area", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	memset(monitored_processes, NULL, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	CloseSharedRegion("test_area", monitored_processes);
+
 
 
 	//attached_processes = (PROCESS_ENV **) calloc(32, sizeof(PROCESS_ENV *));

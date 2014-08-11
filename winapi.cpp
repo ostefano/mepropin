@@ -163,13 +163,58 @@ __declspec(naked) PLDR_DATA_ENTRY firstLdrDataEntry() {
 	}
 }
 
+/*
+VOID * AccessSharedRegion(char name[]) {
+
+}*/
+
+VOID * CreateSharedRegion(char name[], int size_t) {
+
+	HANDLE hMemory = CreateFileMapping(
+		(HANDLE)0xFFFFFFFF, 
+		NULL,
+		PAGE_READWRITE, 
+		0,
+		size_t,
+		name);
+    if(hMemory == NULL) {
+		return NULL;
+	}
+
+    SHM_PROCESS_ENV ** envs = (SHM_PROCESS_ENV **) MapViewOfFile(
+		hMemory,
+		FILE_MAP_WRITE,
+		0,
+		0,
+		size_t);
+
+	return envs;
+}
+
+VOID CloseSharedRegion(char name[], VOID * region) {
+	UnmapViewOfFile(region); 
+}
+
+
+
+int get_current_page_size() {
+	SYSTEM_INFO si;
+    GetSystemInfo(&si);
+	return si.dwPageSize;
+}
+
+// Power of two
+int roundUp(int numToRound, int multiple)  {
+   return (numToRound + multiple - 1) & ~(multiple - 1);
+}
+
 int pe_create_dll(FILE * trace, THREAD_ENV * tenv, ADDRINT ip) {
 
-	UINT32 page_size = 0x2000;
+	UINT32 page_size = get_current_page_size();
 
 	// FIXME ROUND DOWN AND UP PAGE
-	UINT32 dll_code_start = ip - page_size;
-	UINT32 dll_code_end = ip - page_size;
+	UINT32 dll_code_start = roundUp(ip, page_size) - page_size;
+	UINT32 dll_code_end = roundUp(ip, page_size);
 
 	UINT32 dll_bss_start = dll_code_end;
 	UINT32 dll_bss_end = dll_bss_start + page_size;
