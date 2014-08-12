@@ -117,13 +117,18 @@ inline int get_dll(THREAD_ENV * current_t, VOID * ip) {
 			dll_index = pe_create_dll(trace, current_t, (ADDRINT) ip);
 		}
 #endif
-		ASSERT(dll_index != current_t->dll_count, "[!] Code base STILL unknown!! Abort!!");
-		fprintf(trace, "[!] Code base now known for address %p\n", ip);
+		if(dll_index == -1) {
+			dll_index = pe_create_dll(trace, current_t, (ADDRINT) ip);
+		}
+		
+		//ASSERT(dll_index != current_t->dll_count, "[!] Code base STILL unknown!! Abort!!");
+		//fprintf(trace, "[!] Code base now known for address %p\n", ip);
 	}
 	return dll_index;
 }
 
 VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID * addr) {
+
 	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
 	THREAD_ENV * current_t;
 	
@@ -175,13 +180,18 @@ VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID
 		update_tesp(current_t, esp);
 	}
 
+	
 	update_pcounters(pe, mw);
 	if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->code_range)) {
 		update_tcounters(current_t, addr, ip, mw);
 	} else {
-		DLL_ENV * current_d = current_t->dll_envs[get_dll(current_t, ip)];
-		update_dcounters(current_t, current_d, ip, mw);
+		int i = get_dll(current_t, ip);
+		if (i != -1) {
+			DLL_ENV * current_d = current_t->dll_envs[i];
+			update_dcounters(current_t, current_d, ip, mw);
+		}
 	}
+	
 }
 
 VOID Instruction(INS ins, VOID *v) {
@@ -330,9 +340,9 @@ int main(int argc, char *argv[]) {
 	//monitored_processes = (SHM_PROCESS_ENV **) calloc(MAX_PROCESS_COUNT, sizeof(SHM_PROCESS_ENV));
 	fprintf(trace, "[*] Will use %d bytes of contigous memory\n", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
 
-	monitored_processes = (SHM_PROCESS_ENV **)  CreateSharedRegion("test_area", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
-	memset(monitored_processes, NULL, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
-	CloseSharedRegion("test_area", monitored_processes);
+	//monitored_processes = (SHM_PROCESS_ENV **)  CreateSharedRegion("test_area", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	//memset(monitored_processes, NULL, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	//CloseSharedRegion("test_area", monitored_processes);
 
 
 

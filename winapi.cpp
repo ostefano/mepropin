@@ -210,28 +210,34 @@ int roundUp(int numToRound, int multiple)  {
 
 int pe_create_dll(FILE * trace, THREAD_ENV * tenv, ADDRINT ip) {
 
+	/*
 	UINT32 page_size = get_current_page_size();
+	UINT32 page_top = roundUp(ip, page_size);
 
 	// FIXME ROUND DOWN AND UP PAGE
-	UINT32 dll_code_start = roundUp(ip, page_size) - page_size;
-	UINT32 dll_code_end = roundUp(ip, page_size);
+	UINT32 dll_code_start = page_top - page_size;
+	UINT32 dll_code_end = page_top;
 
 	UINT32 dll_bss_start = dll_code_end;
 	UINT32 dll_bss_end = dll_bss_start + page_size;
 
-	DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
+	
 	fprintf(trace, "[!]   Module [FAKE] loaded for address %p\n", ip);
 	fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, page_size);
 	fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end, page_size);
+	*/
 
+	//return -1;
+
+	DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
 	dll->name = (char *) malloc(strlen("FAKE")+1);
-	sprintf_s(dll->name, strlen("FAKE"), "FAKE");
-	dll->name[strlen("FAKE")] = '\0';
+	//sprintf(dll->name, "FAKE");
 	dll->data_counter = 0;
 	dll->stack_counter = 0;
 	dll->heap_counter = 0;
-	ASSIGN_RANGE(dll->code_range, dll_code_start, dll_code_end);
-	ASSIGN_RANGE(dll->data_range, dll_bss_start, dll_bss_end);
+	//ASSIGN_RANGE(dll->code_range, dll_code_start, dll_code_end);
+	//ASSIGN_RANGE(dll->data_range, dll_bss_start, dll_bss_end);
+	return -1;
 		
 	tenv->dll_envs[tenv->dll_count++] = dll;
 	return tenv->dll_count-1;
@@ -251,22 +257,23 @@ int pe_fill_dll(FILE * trace, THREAD_ENV * tenv, ADDRINT ip) {
 		UINT32 dll_code_start = (UINT32) (ImageBaseAddress + header->BaseOfCode);
 		UINT32 dll_code_end = (UINT32) (ImageBaseAddress + header->BaseOfCode + header->SizeOfCode);
 
+		//return -1;
 		if(ip >= dll_code_start && ip <= dll_code_end) {
 
 			UINT32 dll_bss_start = (UINT32) (ImageBaseAddress + header->BaseOfData);
 			UINT32 dll_bss_end = (UINT32) (ImageBaseAddress + header->BaseOfData + header->SizeOfInitializedData + header->SizeOfUninitializedData);
 		
-			DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
+			//return -1;
 			fprintf(trace, "[!]   Module [%S] loaded at [%p] with EP at [%p]\n", 
 				cursor->BaseDllName.Buffer, 
 				cursor->BaseAddress, 
 				cursor->EntryPoint);
 			fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, header->SizeOfCode);
 			fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end,  header->SizeOfInitializedData + header->SizeOfUninitializedData);
-
+			
+			DLL_ENV * dll = (DLL_ENV *) malloc(sizeof(DLL_ENV));
 			dll->name = (char *) malloc(cursor->BaseDllName.Length+1);
-			sprintf_s(dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
-			dll->name[cursor->BaseDllName.Length] = '\0';
+			sprintf(dll->name, "%S", cursor->BaseDllName.Buffer);
 			dll->data_counter = 0;
 			dll->stack_counter = 0;
 			dll->heap_counter = 0;
@@ -278,7 +285,7 @@ int pe_fill_dll(FILE * trace, THREAD_ENV * tenv, ADDRINT ip) {
 		}
 		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
 	}
-	return tenv->dll_count;
+	return -1;
 }
 
 
