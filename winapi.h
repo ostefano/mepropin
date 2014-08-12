@@ -3,6 +3,10 @@
 
 #include "common.h"
 
+
+int DLL_FindDll(FILE * trace, SHM_THREAD_ENV * curren_t, ADDRINT ip);
+int DLL_CreateDLL(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT current_ip);
+
 void get_process_name(char ** name, int pid);
 void pe_fill_dlls(FILE * trace, THREAD_ENV * tenv);
 int pe_fill_dll(FILE * trace, THREAD_ENV * current_t, ADDRINT ip);

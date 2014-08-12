@@ -1,24 +1,118 @@
-//#include <stdio.h>
-/*
-namespace WINDOWS
-{
-#include <windows.h>
-	//using namespace WINDOWS;
-//#include <cstring>
-}
-*/
-#include <boost/interprocess/shared_memory_object.hpp>
-#include <boost/interprocess/mapped_region.hpp>
+#include <stdio.h>
+
 #include "pin.H"
 #include "winapi.h"
 #include "common.h"
 
-#include <stdio.h>
-
-using namespace std;
-
-
 FILE * trace;
+
+#if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)
+#define IS_DLL_MONITORED(n)		!DLL_isInWriteBlackList(n)
+#else
+#define IS_DLL_MONITORED(n)		DLL_isInWriteWhiteList(n)
+#endif
+
+inline int DLL_GetThreadDllIndex(SHM_THREAD_ENV * current_t, ADDRINT ip) {
+	for(int i = 0; i < current_t->dll_count; i++) {
+		if(IS_WITHIN_RANGE(ip, current_t->dll_envs[i].code_range)) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+inline int DLL_GetDllIndex(SHM_THREAD_ENV * current_t, ADDRINT current_ip) {
+	int dll_index;
+	dll_index = DLL_GetThreadDllIndex(current_t, current_ip);
+	if(dll_index == -1) {
+		dll_index = DLL_FindDll(trace, current_t, current_ip);
+		if(dll_index == -1) {
+			dll_index = DLL_CreateDLL(trace, current_t, current_ip);
+		}
+	}
+	ASSERT(dll_index != -1, "Still can't find dll index");
+	return dll_index;
+}
+
+
+inline VOID PERF_update_process_counters(SHM_PROCESS_ENV * current_p, UINT64 mw) {
+	AtomicAdd(current_p->total_counter, mw);
+}
+
+/*
+ *	NO Race: always the same thread will modify the structure
+ */
+inline VOID PERF_update_thread_counters(SHM_THREAD_ENV * current_t, VOID * addr, VOID * ip, UINT64 mw) {
+	if(IS_WITHIN_RANGE((ADDRINT) addr, current_t->data_range)) {
+		current_t->data_counter = mw;
+		current_t->global_data_counter = mw;
+	} else if (IS_WITHIN_RANGE((ADDRINT) addr, current_t->stack_range)) {
+		current_t->stack_counter = mw;
+		current_t->global_stack_counter = mw;
+		if( (ADDRINT) ip >= current_t->esp_max) {
+			current_t->llstack_counter = mw;
+			current_t->global_slstack_counter = mw;
+		}
+	} else {
+		current_t->heap_counter = mw;
+		current_t->global_heap_counter = mw;
+	}
+}
+
+inline VOID PERF_update_dll_counters(SHM_THREAD_ENV * current_t, SHM_DLL_ENV * current_d, VOID * ip, UINT64 mw) {
+	if(IS_DLL_MONITORED(current_d->name)) {
+		if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->data_range) || 
+			IS_WITHIN_RANGE((ADDRINT) ip, current_d->data_range)) {
+			current_d->data_counter = mw;
+			current_t->global_data_counter = mw;
+		} else if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->stack_range)) {
+			current_d->stack_counter = mw;
+			current_t->global_stack_counter = mw;
+			if((ADDRINT) ip >= current_t->esp_max) {
+				current_d->llstack_counter = mw;
+				current_t->global_slstack_counter = mw;
+			}
+		} else {
+			current_d->heap_counter = mw;
+			current_t->global_heap_counter = mw;
+		}
+	}
+}
+
+inline VOID PERF_update_thread_stackpointer(SHM_THREAD_ENV * current_t, ADDRINT esp) {
+	if(esp > current_t->esp_min) {
+		current_t->esp_min = 0;
+		if(esp > current_t->esp_max) {
+			current_t->esp_max = esp;
+		}
+	} else {
+		current_t->esp_min = esp;
+	}
+}
+
+
+
+
+
+ADDRINT IsAddressTo(INT32 th_id, VOID * addr, UINT32 esp_value) {
+	
+	if(pe->lookup_table[th_id] == -1) {
+		return 1;
+	}
+
+	// FIX ME - Check ESP values
+#if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
+	if (IS_WITHIN_RANGE((ADDRINT) addr, pe->thread_envs[pe->lookup_table[th_id]]->stack_range)) {
+#else if (WRITES_STACK_SCHEME & WRITES_STACK_LLS_SCHEME)
+	if (esp_value < pe->thread_envs[pe->lookup_table[th_id]]->esp_min) {
+#endif
+		return 0;
+	}
+	return 1;
+}
+
+
+
 PROCESS_ENV * pe;
 
 PROCESS_ENV ** attached_processes;
@@ -52,7 +146,7 @@ ADDRINT AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
 }
  
 inline VOID update_pcounters(PROCESS_ENV * current_p, UINT64 mw) {
-	ADD(pe->bytecounter, mw);
+	ADD(current_p->bytecounter, mw);
 }
 
 inline VOID update_tcounters(THREAD_ENV * current_t, VOID * addr, VOID * ip, UINT64 mw) {

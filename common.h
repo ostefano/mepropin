@@ -1,9 +1,9 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <boost/interprocess/offset_ptr.hpp>
+//#include <boost/interprocess/offset_ptr.hpp>
 
-using namespace boost::interprocess;
+//using namespace boost::interprocess;
 
 //#define ATTACHED_PROCESSES_MAX
 #define MEPRO_LOG 							"C:\\Users\\Stefano\\mepropin\\pinatrace.out"
@@ -28,6 +28,8 @@ using namespace boost::interprocess;
 
 #define ADD_UNKNOWN_DLLS					0
 #define PROTECT_FROM_RACE					1
+
+#define DLL_FAKE_NAME						"unknown.dll"
 
 #if PROTECT_FROM_RACE
 #define ADD(a1,a2)		AtomicAdd(a1, a2)
