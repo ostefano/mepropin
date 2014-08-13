@@ -312,8 +312,6 @@ int main(int argc, char *argv[]) {
 }
 */
 
-
-
 // This is used to instrument the child
 BOOL FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
 
@@ -348,34 +346,11 @@ VOID Fini2(INT32 code, VOID *v) {
 	fclose(trace);
 }
 
-PIN_LOCK lock;
-int parent_pid;
-
-VOID BeforeFork(THREADID threadid, const CONTEXT* ctxt, VOID * arg)
-{
-    PIN_GetLock(&lock, threadid+1);
-    cerr << "TOOL: Before fork." << endl;
-    PIN_ReleaseLock(&lock);
-    parent_pid = PIN_GetPid();
-}
-
-VOID AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID * arg) {
-    PIN_GetLock(&lock, threadid+1);
-    cerr << "TOOL: After fork in child." << endl;
-    PIN_ReleaseLock(&lock);
-    
-    if ((PIN_GetPid() == parent_pid) || ( WIND::GetCurrentProcessId() != parent_pid))
-    {
-        cerr << "PIN_GetPid() fails in child process" << endl;
-        exit(-1);
-    }
-}
-
 int main(INT32 argc, CHAR **argv) {
 
 	trace = fopen(MEPRO_LOG, "a");
 	if (trace == NULL) return 0;
-	fprintf(trace, "[%d] From parent process\n", WIND::GetCurrentProcessId());
+	fprintf(trace, "[%d] From parent process (check=%d)\n", WIND::GetCurrentProcessId(), PIN_GetPid());
     
 	PIN_Init(argc, argv);
 

@@ -60,6 +60,9 @@ bool WaitAndVerify(HANDLE process)
 
 int main(int argc, char * argv[])
 {
+
+    cout << "[*] Parent pid: " << GetCurrentProcessId() << endl;
+
     char cmd[] = "child.exe \"param1 param2\" param3";
     STARTUPINFO         si;
     PROCESS_INFORMATION  pi;
