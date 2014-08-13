@@ -3,7 +3,7 @@
 
 #include "common.h"
 
-
+void DLL_FindAllDlls(FILE * trace, SHM_THREAD_ENV *current_t);
 int DLL_FindDll(FILE * trace, SHM_THREAD_ENV * curren_t, ADDRINT ip);
 int DLL_CreateDLL(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT current_ip);
 
