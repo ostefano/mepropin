@@ -19,6 +19,7 @@ export OBJECT_ROOTS
 
 TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\repmove.exe
 TARGET_BIN=C:\\Program\ Files\ \(x86\)\\Mozilla\ Firefox\\firefox.exe
+TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\fork.exe
 #TARGET_BIN=C:\\Windows\\SysWOW64\\notepad.exe
 
 all: clean ia32 exec log  

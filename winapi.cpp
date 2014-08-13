@@ -27,6 +27,18 @@ typedef struct LDR_DATA_ENTRY {
 	ULONG			TimeDateStamp;
 } LDR_DATA_ENTRY, *PLDR_DATA_ENTRY;
 
+
+int get_current_page_size() {
+	SYSTEM_INFO si;
+    GetSystemInfo(&si);
+	return si.dwPageSize;
+}
+
+// Power of two
+int roundUp(int numToRound, int multiple)  {
+   return (numToRound + multiple - 1) & ~(multiple - 1);
+}
+
 __declspec(naked) PLDR_DATA_ENTRY firstLdrDataEntry() {
 	__asm{
 		mov eax, fs:[0x30]		//	PEB
@@ -109,7 +121,7 @@ int DLL_CreateDLL(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT current_ip) 
 	UINT32 dll_bss_start	= dll_code_end;
 	UINT32 dll_bss_end		= dll_bss_start + page_size;
 
-	fprintf(trace, "[!]   Module [FAKE] loaded for address %p\n", ip);
+	fprintf(trace, "[!]   Module [FAKE] loaded for address %p\n", current_ip);
 	fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, page_size);
 	fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end, page_size);
 	
@@ -286,16 +298,7 @@ VOID CloseSharedRegion(char name[], VOID * region) {
 
 
 
-int get_current_page_size() {
-	SYSTEM_INFO si;
-    GetSystemInfo(&si);
-	return si.dwPageSize;
-}
 
-// Power of two
-int roundUp(int numToRound, int multiple)  {
-   return (numToRound + multiple - 1) & ~(multiple - 1);
-}
 
 int pe_create_dll(FILE * trace, THREAD_ENV * tenv, ADDRINT ip) {
 

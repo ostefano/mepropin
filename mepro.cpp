@@ -1,10 +1,23 @@
 #include <stdio.h>
-
+#include <iostream>
 #include "pin.H"
 #include "winapi.h"
 #include "common.h"
 
+#include <sys/types.h>
+#include <stdlib.h>
+#include <fstream>
+
+using namespace std;
+
+namespace WIND
+{
+#include <windows.h>
+}
+
+
 FILE * trace;
+volatile UINT32 pid;
 
 #if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)
 #define IS_DLL_MONITORED(n)		!DLL_isInWriteBlackList(n)
@@ -12,7 +25,13 @@ FILE * trace;
 #define IS_DLL_MONITORED(n)		DLL_isInWriteWhiteList(n)
 #endif
 
-inline void INFO_FillThreadInfo(SHM_THREAD_ENV * current_t, ADDRINT current_esp) {
+#if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
+#define	IS_STACK_REGION_IGNORED(t,e,a)		(IS_WITHIN_RANGE((ADDRINT) a, t->stack_range))
+#else
+#define IS_STACK_REGION_IGNORED(t,e,a)		(e < t->esp_min)
+#endif
+
+inline void INFO_FillThreadInfo(SHM_THREAD_ENV * current_t) {
 	UINT64 value;
 	UINT32 stack_base;
 	UINT32 stack_limit;
@@ -42,8 +61,8 @@ inline void INFO_FillThreadInfo(SHM_THREAD_ENV * current_t, ADDRINT current_esp)
 	set_range(trace, current_t->data_range, ".data");
 	set_range(trace, current_t->code_range, ".text");
 
-	current_t->esp_max = 0;
-	current_t->esp_min = current_esp;
+	//current_t->esp_max = 0;
+	//current_t->esp_min = current_esp;
 
 	DLL_FindAllDlls(trace, current_t);		
 }
@@ -113,32 +132,31 @@ inline VOID PERF_update_dll_counters(SHM_THREAD_ENV * current_t, SHM_DLL_ENV * c
 }
 
 inline VOID PERF_update_thread_stackpointer(SHM_THREAD_ENV * current_t, ADDRINT esp) {
-	if(esp > current_t->esp_min) {
-		current_t->esp_min = 0;
-		if(esp > current_t->esp_max) {
-			current_t->esp_max = esp;
-		}
-	} else {
+	if (current_t->esp_max == 0 && current_t->esp_min == 0) {
 		current_t->esp_min = esp;
+	} else {
+		if(esp > current_t->esp_min) {
+			current_t->esp_min = 0;
+			if(esp > current_t->esp_max) {
+				current_t->esp_max = esp;
+			}
+		} else {
+			current_t->esp_min = esp;
+		}
 	}
 }
 
-
-
+PROCESS_ENV * pe;
 
 
 ADDRINT IsAddressTo(INT32 th_id, VOID * addr, UINT32 esp_value) {
 	
+	//UINT16
 	if(pe->lookup_table[th_id] == -1) {
 		return 1;
 	}
 
-	// FIX ME - Check ESP values
-#if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
-	if (IS_WITHIN_RANGE((ADDRINT) addr, pe->thread_envs[pe->lookup_table[th_id]]->stack_range)) {
-#else if (WRITES_STACK_SCHEME & WRITES_STACK_LLS_SCHEME)
-	if (esp_value < pe->thread_envs[pe->lookup_table[th_id]]->esp_min) {
-#endif
+	if(IS_STACK_REGION_IGNORED(pe->thread_envs[pe->lookup_table[th_id]], esp_value, addr)) {
 		return 0;
 	}
 	return 1;
@@ -146,7 +164,6 @@ ADDRINT IsAddressTo(INT32 th_id, VOID * addr, UINT32 esp_value) {
 
 
 
-PROCESS_ENV * pe;
 
 PROCESS_ENV ** attached_processes;
 
@@ -174,24 +191,21 @@ ADDRINT AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
 
 VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID * addr) {
 
-	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
-	
 	SHM_THREAD_ENV * current_t;
 	SHM_PROCESS_ENV * current_p;// = attached_processes[0];
+	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
 
 	if(pe->lookup_table[th_id] == -1) {
 		// Atomically increase the counter and since only one thread is holding
 		// this th_id, we can be use that only the current thread is updating
 		// the lookup table with the updated value (atomically inc'ed)
 		current_p->thread_lookup[th_id] = AtomicInc(current_p->thread_count) - 1;
-		INFO_FillThreadInfo(&current_p->thread_envs[current_p->thread_lookup[th_id]], esp); 
+		INFO_FillThreadInfo(&current_p->thread_envs[current_p->thread_lookup[th_id]]); 
 	}
-
 	current_t = &current_p->thread_envs[current_p->thread_lookup[th_id]];
 
-	PERF_update_thread_stackpointer(current_t, esp);
 	PERF_update_process_counters(current_p, mw);
-
+	PERF_update_thread_stackpointer(current_t, esp);
 	if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->code_range)) {
 		PERF_update_thread_counters(current_t, addr, ip, mw);
 	} else {
@@ -205,13 +219,11 @@ VOID Instruction(INS ins, VOID *v) {
 	UINT32 memOperands = INS_MemoryOperandCount(ins);
 	for (UINT32 memOp = 0; memOp < memOperands; memOp++) {
 		if (INS_MemoryOperandIsWritten(ins, memOp) ) {
-			// THIRD VERSION (READY TO BE THE FASTEST)
 			INS_InsertIfPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)AffectStack, 
 				IARG_THREAD_ID, 
 				IARG_MEMORYWRITE_EA,
 				IARG_REG_VALUE, REG_STACK_PTR,
 				IARG_END);
-
 			INS_InsertThenPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite, 
 				IARG_THREAD_ID, 
 				IARG_CONTEXT,
@@ -237,9 +249,10 @@ INT32 Usage() {
 
 SHM_PROCESS_ENV ** monitored_processes;
 
+
 /* ===================================================================== */
 /* Main */
-/* ===================================================================== */
+/* ===================================================================== 
 int main(int argc, char *argv[]) {
 
 	trace = fopen(MEPRO_LOG, "w");
@@ -256,6 +269,7 @@ int main(int argc, char *argv[]) {
 
 	//monitored_processes = (SHM_PROCESS_ENV **)  CreateSharedRegion("test_area", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
 	//memset(monitored_processes, NULL, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	//memset(monitored_processes
 	//CloseSharedRegion("test_area", monitored_processes);
 
 
@@ -296,3 +310,82 @@ int main(int argc, char *argv[]) {
 	PIN_StartProgram();
 	return 0;
 }
+*/
+
+
+
+// This is used to instrument the child
+BOOL FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
+
+    BOOL res;
+    INT appArgc;
+    CHAR const * const * appArgv;
+
+    OS_PROCESS_ID pid = CHILD_PROCESS_GetId(childProcess);
+
+	fprintf(trace, "[%d] Launching the child (what is this: %d)\n", pid, WIND::GetCurrentProcessId());
+    CHILD_PROCESS_GetCommandLine(childProcess, &appArgc, &appArgv);
+	fprintf(trace, "[%d]\t With name: %s\n", pid, appArgv[0]);
+
+    //Set Pin's command line for child process
+    INT pinArgc = 0;
+    CHAR const * pinArgv[10];
+
+    string pin = "C:\\Users\\Stefano\\pin\\pin.exe";
+	pinArgv[pinArgc++] = pin.c_str();
+    pinArgv[pinArgc++] = "-follow_execv";
+    pinArgv[pinArgc++] = "-t";
+	string tool = "C:\\Users\\Stefano\\mepropin\\obj-ia32\\mepro.dll";  
+	pinArgv[pinArgc++] = tool.c_str();
+    pinArgv[pinArgc++] = "--";
+
+    CHILD_PROCESS_SetPinCommandLine(childProcess, pinArgc, pinArgv);
+
+    return TRUE;
+}
+
+VOID Fini2(INT32 code, VOID *v) {
+	fclose(trace);
+}
+
+PIN_LOCK lock;
+int parent_pid;
+
+VOID BeforeFork(THREADID threadid, const CONTEXT* ctxt, VOID * arg)
+{
+    PIN_GetLock(&lock, threadid+1);
+    cerr << "TOOL: Before fork." << endl;
+    PIN_ReleaseLock(&lock);
+    parent_pid = PIN_GetPid();
+}
+
+VOID AfterForkInChild(THREADID threadid, const CONTEXT* ctxt, VOID * arg) {
+    PIN_GetLock(&lock, threadid+1);
+    cerr << "TOOL: After fork in child." << endl;
+    PIN_ReleaseLock(&lock);
+    
+    if ((PIN_GetPid() == parent_pid) || ( WIND::GetCurrentProcessId() != parent_pid))
+    {
+        cerr << "PIN_GetPid() fails in child process" << endl;
+        exit(-1);
+    }
+}
+
+int main(INT32 argc, CHAR **argv) {
+
+	trace = fopen(MEPRO_LOG, "a");
+	if (trace == NULL) return 0;
+	fprintf(trace, "[%d] From parent process\n", WIND::GetCurrentProcessId());
+    
+	PIN_Init(argc, argv);
+
+    PIN_AddFollowChildProcessFunction(FollowChild, 0);
+	//PIN_AddForkFunction(FPOINT_BEFORE, BeforeFork, 0);  
+	//PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
+
+	PIN_AddFiniFunction(Fini2, 0);
+    PIN_StartProgram();
+
+    return 0;
+}
+
