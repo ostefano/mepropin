@@ -43,13 +43,15 @@ attach:
 	@echo BINARY $(TARGET_BIN)
 	@echo PNAME  $(TARGET_PNAME)
 	@echo PID    $(TARGET_PID)
-	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1
+	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) \ 
+		-pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1
 
 exec:
 	@echo BINARY $(TARGET_BIN)
 	@echo PNAME  $(TARGET_PNAME)
 	@echo PID    $(TARGET_PID)
-	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1 -- $(TARGET_BIN)
+	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) \
+		-pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1 -- $(TARGET_BIN)
 
 log: 
 	cat pinatrace.out

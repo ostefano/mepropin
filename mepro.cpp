@@ -65,9 +65,6 @@ inline void INFO_FillThreadInfo(SHM_THREAD_ENV * current_t) {
 	set_range(trace, current_t->data_range, ".data");
 	set_range(trace, current_t->code_range, ".text");
 
-	//current_t->esp_max = 0;
-	//current_t->esp_min = current_esp;
-
 	DLL_FindAllDlls(trace, current_t);		
 }
 
@@ -310,24 +307,27 @@ int main(int argc, char *argv[]) {
 // This is used to instrument the child
 BOOL FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
 
-    BOOL res;
+	INT pinArgc = 0;
+    CHAR const * pinArgv[16];
+
     INT appArgc;
     CHAR const * const * appArgv;
 
     OS_PROCESS_ID pid = CHILD_PROCESS_GetId(childProcess);
-
-	
     CHILD_PROCESS_GetCommandLine(childProcess, &appArgc, &appArgv);
 	fprintf(trace, "[%d] Launching a child (%s) with pid %d\n", WIND::GetCurrentProcessId(), appArgv[0], pid);
 
-    //Set Pin's command line for child process
-    INT pinArgc = 0;
-    CHAR const * pinArgv[13];
-
 	// Begin
-    string pin = "C:\\Users\\Stefano\\pin\\pin.exe";
+	string pin = KnobPinPath.Value() + "\\" + KnobPinName.Value();
 	pinArgv[pinArgc++] = pin.c_str();
-    pinArgv[pinArgc++] = "-follow_execv";
+    
+	//-xyzzy -mesgon warning
+	pinArgv[pinArgc++] = "-xyzzy";
+	pinArgv[pinArgc++] = "-mesgon";
+	pinArgv[pinArgc++] = "warning";
+
+	// Follow_exec
+	pinArgv[pinArgc++] = "-follow_execv";
     
 	// -t 
 	pinArgv[pinArgc++] = "-t";
@@ -360,21 +360,13 @@ BOOL FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
     return TRUE;
 }
 
-WIND::HANDLE _pregion;
-WIND::HANDLE _cregion;
-
-
-
-SHM_PROCESS_ENV *  _pmemory;
+WIND::HANDLE		_pregion;
+WIND::HANDLE		_cregion;
+SHM_PROCESS_ENV *	_pmemory;
 INT32 *				_cmemory;
+INT32				_pindex;
 
-
-INT32 _pindex;
-
-
-
-
-VOID Fini2(INT32 code, VOID *v) {
+VOID CloseAndClean(INT32 code, VOID *v) {
 	fclose(trace);
 	WIND::UnmapViewOfFile(_pmemory); 
 	WIND::CloseHandle(_pregion);
@@ -382,8 +374,6 @@ VOID Fini2(INT32 code, VOID *v) {
 }
 
 int main(INT32 argc, CHAR **argv) {
-
-
 
 	PIN_Init(argc, argv);
 
@@ -413,17 +403,16 @@ int main(INT32 argc, CHAR **argv) {
 
 	_pregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT, "mepro");
     _pmemory = (SHM_PROCESS_ENV *) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
-	//_pmemory[_pindex];
+	
 	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
-	//p_current->process_id = pid;
-	//strcpy_s(_pmemory[_pindex]->name, strlen(pname), pname);
-
-
+	_pmemory[_pindex].process_id = pid;
+	strcpy_s(_pmemory[_pindex].name, strlen(pname) + 1, pname);
+	free(pname);
 
 
     PIN_AddFollowChildProcessFunction(FollowChild, 0);
 
-	PIN_AddFiniFunction(Fini2, 0);
+	PIN_AddFiniFunction(CloseAndClean, 0);
     PIN_StartProgram();
     return 0;
 }

@@ -92,7 +92,7 @@ typedef struct {
 #define MAX_CHAR_COUNT		128
 #define MAX_THREAD_COUNT	64
 #define MAX_DLL_COUNT		256
-#define MAX_PROCESS_COUNT	2
+#define MAX_PROCESS_COUNT	5
 
 typedef struct {
 	short max_char_count;
