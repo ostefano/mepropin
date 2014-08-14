@@ -1,27 +1,20 @@
 #include <stdio.h>
 #include <iostream>
-#include "pin.H"
-#include "winapi.h"
-#include "common.h"
-
 #include <sys/types.h>
 #include <stdlib.h>
 #include <fstream>
 
+#include "pin.H"
+#include "winapi.h"
+#include "common.h"
+
 using namespace std;
 
-namespace WIND
-{
-#include <windows.h>
+namespace WIND {
+	#include <windows.h>
 }
 
-
 FILE * trace;
-//volatile UINT32 pid;
-
-
-
-KNOB<string> KnobTest(KNOB_MODE_OVERWRITE, "pintool", "f", "NOT SPECIFIED", "control output to file");
 
 KNOB<BOOL> KnobFirstProcess(KNOB_MODE_WRITEONCE, "pintool", "first_process", "1", "If this is the first process to be instrumented");
 KNOB<string> KnobPinPath(KNOB_MODE_WRITEONCE, "pintool", "pin_path",  "c_path_to_pin", "Aboslute path to PIN");
@@ -174,14 +167,6 @@ ADDRINT IsAddressTo(INT32 th_id, VOID * addr, UINT32 esp_value) {
 }
 
 
-
-
-PROCESS_ENV ** attached_processes;
-
-#ifndef TRACE_EN
-	#define TRACE_EN 0
-#endif
-
 ADDRINT AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
 	
 	if(pe->lookup_table[th_id] == -1) {
@@ -258,7 +243,6 @@ INT32 Usage() {
 	return -1;
 }
 
-SHM_PROCESS_ENV ** monitored_processes;
 
 
 /* ===================================================================== */
@@ -381,7 +365,7 @@ WIND::HANDLE _cregion;
 
 
 
-SHM_PROCESS_ENV **  _pmemory;
+SHM_PROCESS_ENV *  _pmemory;
 INT32 *				_cmemory;
 
 
@@ -397,8 +381,6 @@ VOID Fini2(INT32 code, VOID *v) {
 	WIND::CloseHandle(_cregion);
 }
 
-int variable = 0;
-
 int main(INT32 argc, CHAR **argv) {
 
 
@@ -406,9 +388,7 @@ int main(INT32 argc, CHAR **argv) {
 	PIN_Init(argc, argv);
 
 	CHAR * pname;
-	INT32 pid;
-
-	pid = PIN_GetPid();
+	INT32 pid = PIN_GetPid();
 	get_process_name(&pname, pid);
 
 	trace = fopen(MEPRO_LOG, "a");
@@ -432,9 +412,10 @@ int main(INT32 argc, CHAR **argv) {
 	fprintf(trace, "[%d] Index of the process: %d\n", pid, _pindex);
 
 	_pregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT, "mepro");
-    _pmemory = (SHM_PROCESS_ENV **) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+    _pmemory = (SHM_PROCESS_ENV *) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	//_pmemory[_pindex];
 	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
-	//_pmemory[_pindex]->process_id = pid;
+	//p_current->process_id = pid;
 	//strcpy_s(_pmemory[_pindex]->name, strlen(pname), pname);
 
 
