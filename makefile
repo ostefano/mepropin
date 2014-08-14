@@ -1,6 +1,8 @@
 UNAME=$(shell uname)
 PINTOOL_NAME=mepro
 
+#REMEMBER. CANT USE ABSOLUTE PATH BECAUSE CYGWIN CANT CANONALUZE COLONS
+
 #####  WINDOWS
 ATTACH_TO_TARGET=true
 TARGET_BIN=C:\\Windows\\SysWOW64\\notepad.exe
@@ -8,6 +10,7 @@ TARGET_PNAME=$(shell .\\notdir.cmd $(TARGET_BIN))
 TARGET_PID=$(shell .\\pgrep.cmd $(TARGET_PNAME))
 PINTOOL_FILE=$(PINTOOL_NAME).dll
 PIN_ROOT=..\\pin
+PIN_ROOT_ABS=C:\\Users\\Stefano\\pin\\
 PIN_EXE=$(PIN_ROOT)\\pin.exe
 CWD=C:\\Users\\Stefano\\mepropin
 
@@ -40,13 +43,13 @@ attach:
 	@echo BINARY $(TARGET_BIN)
 	@echo PNAME  $(TARGET_PNAME)
 	@echo PID    $(TARGET_PID)
-	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE)
+	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1
 
 exec:
 	@echo BINARY $(TARGET_BIN)
 	@echo PNAME  $(TARGET_PNAME)
 	@echo PID    $(TARGET_PID)
-	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -- $(TARGET_BIN)
+	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1 -- $(TARGET_BIN)
 
 log: 
 	cat pinatrace.out

@@ -1,6 +1,6 @@
 !include <win32.mak>
 
-TARGETS = repmove.exe fork.exe child.exe
+TARGETS = repmove.exe fork.exe child.exe fork_attach.exe
 LIBS = Advapi32.lib 
 
 all: $(TARGETS)

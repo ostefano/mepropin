@@ -17,7 +17,18 @@ namespace WIND
 
 
 FILE * trace;
-volatile UINT32 pid;
+//volatile UINT32 pid;
+
+
+
+KNOB<string> KnobTest(KNOB_MODE_OVERWRITE, "pintool", "f", "NOT SPECIFIED", "control output to file");
+
+KNOB<BOOL> KnobFirstProcess(KNOB_MODE_WRITEONCE, "pintool", "first_process", "1", "If this is the first process to be instrumented");
+KNOB<string> KnobPinPath(KNOB_MODE_WRITEONCE, "pintool", "pin_path",  "c_path_to_pin", "Aboslute path to PIN");
+KNOB<string> KnobPinName(KNOB_MODE_WRITEONCE, "pintool", "pin_name",  "pin.exe", "Full name of PIN");
+KNOB<string> KnobToolPath(KNOB_MODE_WRITEONCE, "pintool", "tool_path", "c_path_to_tool", "Absolute path to tool path");
+KNOB<string> KnobToolName(KNOB_MODE_WRITEONCE, "pintool", "tool_name", "dll_name", "Full name of the tool");
+
 
 #if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)
 #define IS_DLL_MONITORED(n)		!DLL_isInWriteBlackList(n)
@@ -321,46 +332,118 @@ BOOL FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
 
     OS_PROCESS_ID pid = CHILD_PROCESS_GetId(childProcess);
 
-	fprintf(trace, "[%d] Launching the child (what is this: %d)\n", pid, WIND::GetCurrentProcessId());
+	
     CHILD_PROCESS_GetCommandLine(childProcess, &appArgc, &appArgv);
-	fprintf(trace, "[%d]\t With name: %s\n", pid, appArgv[0]);
+	fprintf(trace, "[%d] Launching a child (%s) with pid %d\n", WIND::GetCurrentProcessId(), appArgv[0], pid);
 
     //Set Pin's command line for child process
     INT pinArgc = 0;
-    CHAR const * pinArgv[10];
+    CHAR const * pinArgv[13];
 
+	// Begin
     string pin = "C:\\Users\\Stefano\\pin\\pin.exe";
 	pinArgv[pinArgc++] = pin.c_str();
     pinArgv[pinArgc++] = "-follow_execv";
-    pinArgv[pinArgc++] = "-t";
-	string tool = "C:\\Users\\Stefano\\mepropin\\obj-ia32\\mepro.dll";  
+    
+	// -t 
+	pinArgv[pinArgc++] = "-t";
+	string tool = (KnobToolPath.Value() + "\\" + KnobToolName.Value());
 	pinArgv[pinArgc++] = tool.c_str();
+
+	// -pin_path 
+	pinArgv[pinArgc++] = "-pin_path";
+	string pin_path = KnobPinPath.Value();
+	pinArgv[pinArgc++] = pin_path.c_str();
+	
+	// -tool_path 
+	pinArgv[pinArgc++] = "-tool_path";
+	string tool_path = KnobToolPath.Value();
+	pinArgv[pinArgc++] = tool_path.c_str();
+	
+	// -tool_name $(PINTOOL_FILE)
+	pinArgv[pinArgc++] = "-tool_name";
+	string tool_name = KnobToolName.Value();
+	pinArgv[pinArgc++] = tool_name.c_str();
+
+	// -firstprocess
+	pinArgv[pinArgc++] = "-first_process";
+	pinArgv[pinArgc++] = "0";
+
+	// END
     pinArgv[pinArgc++] = "--";
 
     CHILD_PROCESS_SetPinCommandLine(childProcess, pinArgc, pinArgv);
-
     return TRUE;
 }
 
+WIND::HANDLE _pregion;
+WIND::HANDLE _cregion;
+
+
+
+SHM_PROCESS_ENV **  _pmemory;
+INT32 *				_cmemory;
+
+
+INT32 _pindex;
+
+
+
+
 VOID Fini2(INT32 code, VOID *v) {
 	fclose(trace);
+	WIND::UnmapViewOfFile(_pmemory); 
+	WIND::CloseHandle(_pregion);
+	WIND::CloseHandle(_cregion);
 }
+
+int variable = 0;
 
 int main(INT32 argc, CHAR **argv) {
 
-	trace = fopen(MEPRO_LOG, "a");
-	if (trace == NULL) return 0;
-	fprintf(trace, "[%d] From parent process (check=%d)\n", WIND::GetCurrentProcessId(), PIN_GetPid());
-    
+
+
 	PIN_Init(argc, argv);
 
+	CHAR * pname;
+	INT32 pid;
+
+	pid = PIN_GetPid();
+	get_process_name(&pname, pid);
+
+	trace = fopen(MEPRO_LOG, "a");
+	ASSERT(trace != NULL, "I Need to keep a log");
+	if(KnobFirstProcess) {
+		fprintf(trace, "[%d] First process instrumented\n", pid);
+	} else {
+		fprintf(trace, "[%d] Child is born!!!\n", pid);
+	}
+	fprintf(trace, "[%d] \t name: %s\n", pid, pname); 
+	
+	_cregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(INT32), "mepro_counter");
+    _cmemory = (INT32 *) WIND::MapViewOfFile(_cregion, FILE_MAP_WRITE, 0, 0, sizeof(INT32));
+	if(KnobFirstProcess) {
+		*_cmemory = 0;
+	} else {
+		WIND::InterlockedIncrement((long *)_cmemory);
+	}
+	_pindex = *_cmemory;
+	WIND::UnmapViewOfFile(_cmemory); 
+	fprintf(trace, "[%d] Index of the process: %d\n", pid, _pindex);
+
+	_pregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT, "mepro");
+    _pmemory = (SHM_PROCESS_ENV **) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
+	//_pmemory[_pindex]->process_id = pid;
+	//strcpy_s(_pmemory[_pindex]->name, strlen(pname), pname);
+
+
+
+
     PIN_AddFollowChildProcessFunction(FollowChild, 0);
-	//PIN_AddForkFunction(FPOINT_BEFORE, BeforeFork, 0);  
-	//PIN_AddForkFunction(FPOINT_AFTER_IN_CHILD, AfterForkInChild, 0);
 
 	PIN_AddFiniFunction(Fini2, 0);
     PIN_StartProgram();
-
     return 0;
 }
 

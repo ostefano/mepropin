@@ -134,7 +134,9 @@ int DLL_CreateDLL(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT current_ip) 
 }
 
 
-
+UINT16 AtomicInc(volatile UINT32& mem) {
+	return InterlockedIncrement((long *)&mem);
+}
 
 UINT16 AtomicInc(volatile UINT16& mem) {
 	return InterlockedIncrement16((short *)&mem);
