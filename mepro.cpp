@@ -14,15 +14,6 @@ namespace WIND {
 	#include <windows.h>
 }
 
-FILE * trace;
-
-KNOB<BOOL> KnobFirstProcess(KNOB_MODE_WRITEONCE, "pintool", "first_process", "1", "If this is the first process to be instrumented");
-KNOB<string> KnobPinPath(KNOB_MODE_WRITEONCE, "pintool", "pin_path",  "c_path_to_pin", "Aboslute path to PIN");
-KNOB<string> KnobPinName(KNOB_MODE_WRITEONCE, "pintool", "pin_name",  "pin.exe", "Full name of PIN");
-KNOB<string> KnobToolPath(KNOB_MODE_WRITEONCE, "pintool", "tool_path", "c_path_to_tool", "Absolute path to tool path");
-KNOB<string> KnobToolName(KNOB_MODE_WRITEONCE, "pintool", "tool_name", "dll_name", "Full name of the tool");
-
-
 #if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)
 #define IS_DLL_MONITORED(n)		!DLL_isInWriteBlackList(n)
 #else
@@ -30,10 +21,24 @@ KNOB<string> KnobToolName(KNOB_MODE_WRITEONCE, "pintool", "tool_name", "dll_name
 #endif
 
 #if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
-#define	IS_STACK_REGION_IGNORED(t,e,a)		(IS_WITHIN_RANGE((ADDRINT) a, t->stack_range))
+#define	IS_STACK_REGION_IGNORED(t,e,a)		(IS_WITHIN_RANGE((ADDRINT) a, t.stack_range))
 #else
-#define IS_STACK_REGION_IGNORED(t,e,a)		(e < t->esp_min)
+#define IS_STACK_REGION_IGNORED(t,e,a)		(e < t.esp_min)
 #endif
+
+FILE *				trace;
+WIND::HANDLE		_pregion;
+WIND::HANDLE		_cregion;
+SHM_PROCESS_ENV *	_pmemory;
+SHM_PROCESS_ENV *	_pcurrent;
+INT32 *				_cmemory;
+INT32				_pindex;
+
+KNOB<BOOL> KnobFirstProcess(KNOB_MODE_WRITEONCE, "pintool", "first_process", "1", "If this is the first process to be instrumented");
+KNOB<string> KnobPinPath(KNOB_MODE_WRITEONCE, "pintool", "pin_path",  "c_path_to_pin", "Aboslute path to PIN");
+KNOB<string> KnobPinName(KNOB_MODE_WRITEONCE, "pintool", "pin_name",  "pin.exe", "Full name of PIN");
+KNOB<string> KnobToolPath(KNOB_MODE_WRITEONCE, "pintool", "tool_path", "c_path_to_tool", "Absolute path to tool path");
+KNOB<string> KnobToolName(KNOB_MODE_WRITEONCE, "pintool", "tool_name", "dll_name", "Full name of the tool");
 
 inline void INFO_FillThreadInfo(SHM_THREAD_ENV * current_t) {
 	UINT64 value;
@@ -147,48 +152,26 @@ inline VOID PERF_update_thread_stackpointer(SHM_THREAD_ENV * current_t, ADDRINT 
 	}
 }
 
-PROCESS_ENV * pe;
 
-
-ADDRINT IsAddressTo(INT32 th_id, VOID * addr, UINT32 esp_value) {
+ADDRINT INST_AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
 	
-	//UINT16
-	if(pe->lookup_table[th_id] == -1) {
+	if(_pcurrent->thread_lookup[th_id] == -1) {
 		return 1;
 	}
 
-	if(IS_STACK_REGION_IGNORED(pe->thread_envs[pe->lookup_table[th_id]], esp_value, addr)) {
+	if(IS_STACK_REGION_IGNORED(_pcurrent->thread_envs[_pcurrent->thread_lookup[th_id]], esp_value, addr)) {
 		return 0;
 	}
 	return 1;
 }
 
-
-ADDRINT AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
-	
-	if(pe->lookup_table[th_id] == -1) {
-		return 1;
-	}
-
-	// FIX ME - Check ESP values
-#if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
-	if (IS_WITHIN_RANGE((ADDRINT) addr, pe->thread_envs[pe->lookup_table[th_id]]->stack_range)) {
-#else if (WRITES_STACK_SCHEME & WRITES_STACK_LLS_SCHEME)
-	if (esp_value < pe->thread_envs[pe->lookup_table[th_id]]->esp_min) {
-#endif
-		return 0;
-	}
-	return 1;
-}
- 
-
-VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID * addr) {
+VOID INST_RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID * addr) {
 
 	SHM_THREAD_ENV * current_t;
 	SHM_PROCESS_ENV * current_p;// = attached_processes[0];
 	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
 
-	if(pe->lookup_table[th_id] == -1) {
+	if(_pcurrent->thread_lookup[th_id] == -1) {
 		// Atomically increase the counter and since only one thread is holding
 		// this th_id, we can be use that only the current thread is updating
 		// the lookup table with the updated value (atomically inc'ed)
@@ -208,16 +191,16 @@ VOID RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID
 	
 }
 
-VOID Instruction(INS ins, VOID *v) {
+VOID TOOL_Instruction(INS ins, VOID *v) {
 	UINT32 memOperands = INS_MemoryOperandCount(ins);
 	for (UINT32 memOp = 0; memOp < memOperands; memOp++) {
 		if (INS_MemoryOperandIsWritten(ins, memOp) ) {
-			INS_InsertIfPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)AffectStack, 
+			INS_InsertIfPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)INST_AffectStack, 
 				IARG_THREAD_ID, 
 				IARG_MEMORYWRITE_EA,
 				IARG_REG_VALUE, REG_STACK_PTR,
 				IARG_END);
-			INS_InsertThenPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)RecordMemWrite, 
+			INS_InsertThenPredicatedCall(ins, IPOINT_BEFORE, (AFUNPTR)INST_RecordMemWrite, 
 				IARG_THREAD_ID, 
 				IARG_CONTEXT,
 				IARG_MEMORYWRITE_SIZE,
@@ -228,84 +211,14 @@ VOID Instruction(INS ins, VOID *v) {
 	}
 }
 
-VOID Fini(INT32 code, VOID *v) {
-	print_stats(trace, pe);
-	fprintf(trace, "#eof\n");
-	fclose(trace);
-}
 
-INT32 Usage() {
+INT32 TOOL_Usage() {
 	PIN_ERROR( "This Pintool prints a trace of memory addresses\n"
 		+ KNOB_BASE::StringKnobSummary() + "\n");
 	return -1;
 }
 
-
-
-/* ===================================================================== */
-/* Main */
-/* ===================================================================== 
-int main(int argc, char *argv[]) {
-
-	trace = fopen(MEPRO_LOG, "w");
-	if (trace == NULL) return 0;
-	if (PIN_Init(argc, argv)) return Usage();
-
-	pe = (PROCESS_ENV *) malloc(sizeof(pe));
-	memset(pe->lookup_table, -1, sizeof(INT32) * 2048);
-	pe->thread_count = 0;
-
-
-	//monitored_processes = (SHM_PROCESS_ENV **) calloc(MAX_PROCESS_COUNT, sizeof(SHM_PROCESS_ENV));
-	fprintf(trace, "[*] Will use %d bytes of contigous memory\n", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
-
-	//monitored_processes = (SHM_PROCESS_ENV **)  CreateSharedRegion("test_area", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
-	//memset(monitored_processes, NULL, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
-	//memset(monitored_processes
-	//CloseSharedRegion("test_area", monitored_processes);
-
-
-
-	//attached_processes = (PROCESS_ENV **) calloc(32, sizeof(PROCESS_ENV *));
-
-	// FIXME: verify this voodoo code
-	char * name;
-	int pid;
-	for(int i = 0; i < argc; i++) {
-		if(strcmp(argv[i], "-pid") == 0) {
-			int pid = atoi(argv[i+1]);
-			get_process_name(&name, pid);
-			break;
-		}
-		if(strcmp(argv[i], "--") == 0) {
-			char *pfile;
-			pfile = argv[i+1] + strlen(argv[i+1]);
-			for (; pfile > argv[i+1]; pfile--) {
-				if ((*pfile == '\\') || (*pfile == '/')) {
-					pfile++;
-					break;
-				}
-			}
-			name = (char *) malloc(strlen(pfile) + 1);
-			strcpy(name, pfile);
-			name[strlen(pfile)] = '\0';
-		}
-		
-	}
-	fprintf(trace, "[*] Process name: %s\n", name);
-	strcpy(pe->name, name);
-
-	fprintf(trace,"[*] Instrumentation INS MODE\n");
-	INS_AddInstrumentFunction(Instruction, 0);
-
-	PIN_AddFiniFunction(Fini, 0);
-	PIN_StartProgram();
-	return 0;
-}
-*/
-
-// This is used to instrument the child
-BOOL FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
+BOOL TOOL_FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
 
 	INT pinArgc = 0;
     CHAR const * pinArgv[16];
@@ -360,13 +273,8 @@ BOOL FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
     return TRUE;
 }
 
-WIND::HANDLE		_pregion;
-WIND::HANDLE		_cregion;
-SHM_PROCESS_ENV *	_pmemory;
-INT32 *				_cmemory;
-INT32				_pindex;
-
-VOID CloseAndClean(INT32 code, VOID *v) {
+VOID TOOL_CloseAndClean(INT32 code, VOID *v) {
+	//print_stats(trace, &_pmemory[_pindex]);
 	fclose(trace);
 	WIND::UnmapViewOfFile(_pmemory); 
 	WIND::CloseHandle(_pregion);
@@ -375,7 +283,7 @@ VOID CloseAndClean(INT32 code, VOID *v) {
 
 int main(INT32 argc, CHAR **argv) {
 
-	PIN_Init(argc, argv);
+	if (PIN_Init(argc, argv)) return TOOL_Usage();
 
 	CHAR * pname;
 	INT32 pid = PIN_GetPid();
@@ -385,6 +293,7 @@ int main(INT32 argc, CHAR **argv) {
 	ASSERT(trace != NULL, "I Need to keep a log");
 	if(KnobFirstProcess) {
 		fprintf(trace, "[%d] First process instrumented\n", pid);
+		fprintf(trace, "[%d] Will use %d bytes of shared memory\n", pid, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
 	} else {
 		fprintf(trace, "[%d] Child is born!!!\n", pid);
 	}
@@ -403,16 +312,18 @@ int main(INT32 argc, CHAR **argv) {
 
 	_pregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT, "mepro");
     _pmemory = (SHM_PROCESS_ENV *) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
-	
+	_pcurrent = &_pmemory[_pindex];
+
 	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
 	_pmemory[_pindex].process_id = pid;
 	strcpy_s(_pmemory[_pindex].name, strlen(pname) + 1, pname);
+	memset(_pmemory[_pindex].thread_lookup, -1, sizeof(INT32) * MAX_THREAD_COUNT);
 	free(pname);
 
 
-    PIN_AddFollowChildProcessFunction(FollowChild, 0);
-
-	PIN_AddFiniFunction(CloseAndClean, 0);
+    PIN_AddFollowChildProcessFunction(TOOL_FollowChild, 0);
+	//INS_AddInstrumentFunction(TOOL_Instruction, 0);
+	PIN_AddFiniFunction(TOOL_CloseAndClean, 0);
     PIN_StartProgram();
     return 0;
 }
