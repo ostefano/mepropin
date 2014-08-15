@@ -2,6 +2,7 @@
 #include <iostream>
 #include <sys/types.h>
 #include <stdlib.h>
+#include <io.h>
 #include <fstream>
 
 #include "pin.H"
@@ -12,6 +13,7 @@ using namespace std;
 
 namespace WIND {
 	#include <windows.h>
+	#include <TlHelp32.h>
 }
 
 #if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)
@@ -227,8 +229,11 @@ BOOL TOOL_FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
     CHAR const * const * appArgv;
 
     OS_PROCESS_ID pid = CHILD_PROCESS_GetId(childProcess);
+	OS_PROCESS_ID ppid = WIND::GetCurrentProcessId();
     CHILD_PROCESS_GetCommandLine(childProcess, &appArgc, &appArgv);
-	fprintf(trace, "[%d] Launching a child (%s) with pid %d\n", WIND::GetCurrentProcessId(), appArgv[0], pid);
+	fprintf(trace, "[%d] Process is forking!!\n", ppid);
+	fprintf(trace, "[%d] \t Child process (%s) with pid %d is executing\n", ppid, appArgv[0], pid);
+	fflush(trace);
 
 	// Begin
 	string pin = KnobPinPath.Value() + "\\" + KnobPinName.Value();
@@ -273,54 +278,104 @@ BOOL TOOL_FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
     return TRUE;
 }
 
+VOID TOOL_FlushStats() {
+
+}
+
 VOID TOOL_CloseAndClean(INT32 code, VOID *v) {
-	//print_stats(trace, &_pmemory[_pindex]);
+	TOOL_FlushStats();
 	fclose(trace);
 	WIND::UnmapViewOfFile(_pmemory); 
 	WIND::CloseHandle(_pregion);
 	WIND::CloseHandle(_cregion);
 }
 
+VOID TOOL_GetProcessName(CHAR ** name, INT32 pid) {
+	WIND::HANDLE hSnapshot = WIND::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+	if(hSnapshot) {
+		WIND::PROCESSENTRY32 pe32;
+		pe32.dwSize = sizeof(WIND::PROCESSENTRY32);
+		if(WIND::Process32First(hSnapshot,&pe32)) {
+			do {
+				if(pe32.th32ProcessID == pid) {
+					*name = (char *) malloc(sizeof(pe32.szExeFile));
+					strcpy(*name, pe32.szExeFile);
+					break;
+				}
+			} while(WIND::Process32Next(hSnapshot,&pe32));
+		 }
+		 WIND::CloseHandle(hSnapshot);
+	}
+}
+
 int main(INT32 argc, CHAR **argv) {
 
 	if (PIN_Init(argc, argv)) return TOOL_Usage();
 
+	/**
+	 *	Get things as process name and id
+	 *	And print some debug info!
+	 */
 	CHAR * pname;
 	INT32 pid = PIN_GetPid();
-	get_process_name(&pname, pid);
+	TOOL_GetProcessName(&pname, pid);
+	ASSERT(pname != NULL, "I need the name of the process!!");
 
 	trace = fopen(MEPRO_LOG, "a");
 	ASSERT(trace != NULL, "I Need to keep a log");
 	if(KnobFirstProcess) {
-		fprintf(trace, "[%d] First process instrumented\n", pid);
-		fprintf(trace, "[%d] Will use %d bytes of shared memory\n", pid, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+		// Reset the file size
+		_chsize_s(_fileno(trace), 0);
+		fprintf(trace, "[%d] ****************** MEPROPIN initialized ******************\n", pid);
+		fprintf(trace, "[%d] Will use %d bytes of shared memory per snapshot\n", pid, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+		fprintf(trace, "[%d] First process (%s) instrumented\n", pid, pname);
 	} else {
-		fprintf(trace, "[%d] Child is born!!!\n", pid);
+		fprintf(trace, "[%d] Child process (%s) instrumented\n", pid, pname);
 	}
-	fprintf(trace, "[%d] \t name: %s\n", pid, pname); 
 	
+	/**
+	 *	Get the number of processes being monitored from SM so we can have an unique ID
+	 *	Also, Unmap the memory when done, but do NOT close it, since we want to keep that info alive in SM
+	 */
 	_cregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(INT32), "mepro_counter");
-    _cmemory = (INT32 *) WIND::MapViewOfFile(_cregion, FILE_MAP_WRITE, 0, 0, sizeof(INT32));
+    ASSERT(_cregion != NULL, "Fatal Error by CreateFileMapping");
+	_cmemory = (INT32 *) WIND::MapViewOfFile(_cregion, FILE_MAP_WRITE, 0, 0, sizeof(INT32));
+	ASSERT(_cmemory != NULL, "Fatal Error by MapVieOfFile");
 	if(KnobFirstProcess) {
+		// If this is the first process, the ID is 0 and we have to store the number
 		*_cmemory = 0;
 	} else {
+		// If this is no the first, we increment it (atomically) and we use the new value as index
 		WIND::InterlockedIncrement((long *)_cmemory);
 	}
 	_pindex = *_cmemory;
 	WIND::UnmapViewOfFile(_cmemory); 
-	fprintf(trace, "[%d] Index of the process: %d\n", pid, _pindex);
+	fprintf(trace, "[%d] Assigned index (%d) to the process\n", pid, _pindex);
+	fflush(trace);
 
+	/**
+	 *	Get a pointer to the SHM_PROCESS_ENV structure
+	 *	In this case do NOT unmap and to not release the handle (DUH)
+	 */
 	_pregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT, "mepro");
-    _pmemory = (SHM_PROCESS_ENV *) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+    ASSERT(_pregion != NULL, "Fatal Error by CreateFileMapping");
+	_pmemory = (SHM_PROCESS_ENV *) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	ASSERT(_pmemory != NULL, "Fatal Error by MapVieOfFile");
 	_pcurrent = &_pmemory[_pindex];
 
+	// Reset all the memory (should be zeroed already)
 	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
+	// Put pid, name, and set -1 the lookup table
 	_pmemory[_pindex].process_id = pid;
 	strcpy_s(_pmemory[_pindex].name, strlen(pname) + 1, pname);
 	memset(_pmemory[_pindex].thread_lookup, -1, sizeof(INT32) * MAX_THREAD_COUNT);
+	// Free the pointer with the name (we do not need it anymore)
 	free(pname);
-
-
+	
+	/**
+	 *	Ok, do the magic with the instrumentation! Everything is ready!
+	 *
+	 */
     PIN_AddFollowChildProcessFunction(TOOL_FollowChild, 0);
 	//INS_AddInstrumentFunction(TOOL_Instruction, 0);
 	PIN_AddFiniFunction(TOOL_CloseAndClean, 0);
