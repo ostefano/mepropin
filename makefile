@@ -22,7 +22,7 @@ export OBJECT_ROOTS
 
 TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\repmove.exe
 TARGET_BIN=C:\\Program\ Files\ \(x86\)\\Mozilla\ Firefox\\firefox.exe
-TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\fork.exe
+TARGET_BIN=C:\\Users\\Stefano\\mepropin\\test\\fork_attach.exe
 #TARGET_BIN=C:\\Windows\\SysWOW64\\notepad.exe
 
 all: clean ia32 exec log  
@@ -43,15 +43,13 @@ attach:
 	@echo BINARY $(TARGET_BIN)
 	@echo PNAME  $(TARGET_PNAME)
 	@echo PID    $(TARGET_PID)
-	$(PIN_EXE) -xyzzy -mesgon warning -pid $(TARGET_PID) -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) \ 
-		-pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1
+	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -pid $(TARGET_PID) -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1
 
 exec:
 	@echo BINARY $(TARGET_BIN)
 	@echo PNAME  $(TARGET_PNAME)
 	@echo PID    $(TARGET_PID)
-	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) \
-		-pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1 -- $(TARGET_BIN)
+	$(PIN_EXE) -xyzzy -mesgon warning -follow_execv -t $(CWD)\\obj-ia32\\$(PINTOOL_FILE) -pin_path $(PIN_ROOT_ABS) -tool_path $(CWD)\\obj-ia32\\ -tool_name $(PINTOOL_FILE) -first_process 1 -- $(TARGET_BIN)
 
 log: 
 	cat pinatrace.out

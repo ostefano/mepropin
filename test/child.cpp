@@ -40,7 +40,7 @@ int main(int argc, char * argv[])
     if (argc < baseArgc)
     {
         //Got unexpected parameter
-        cout << "Some arguments missed" << endl;
+        cout << "[---] Some arguments missed" << endl;
         return (-2);
     }
     CHAR * expectedArgv[baseArgc] = {{"child.exe"}, {"param1 param2"}, {"param3"}};
@@ -52,7 +52,7 @@ int main(int argc, char * argv[])
     if(index == string::npos)
     {
         //Got unexpected parameter
-        cout << "Got unexpected parameter: " << argv[0] << endl;
+        cout << "[---] Got unexpected parameter: " << argv[0] << endl;
         return (-1);
     }
     //All the rest should have exact match
@@ -62,7 +62,7 @@ int main(int argc, char * argv[])
         if(currentArgv.compare(expectedArgv[i]) != 0)
         {
             //Got unexpected parameter
-            cout << "Got unexpected parameter: " << argv[i] << endl;
+            cout << "[---] Got unexpected parameter: " << argv[i] << endl;
             return (-1);
         }
     }

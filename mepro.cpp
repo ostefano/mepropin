@@ -1,32 +1,20 @@
 #include <stdio.h>
 #include <iostream>
-#include <sys/types.h>
-#include <stdlib.h>
 #include <io.h>
 #include <fstream>
+#include <pin.H>
 
-#include "pin.H"
-#include "winapi.h"
 #include "common.h"
+#include "dllinfo.h"
+#include "perfcounters.h"
 
 using namespace std;
 
 namespace WIND {
-	#include <windows.h>
+	#include <DbgHelp.h>
+	#include <Windows.h>
 	#include <TlHelp32.h>
 }
-
-#if (WRITES_DLL_INCLUDE_SCHEME & WRITES_DLL_BLACKLIST_SCHEME)
-#define IS_DLL_MONITORED(n)		!DLL_isInWriteBlackList(n)
-#else
-#define IS_DLL_MONITORED(n)		DLL_isInWriteWhiteList(n)
-#endif
-
-#if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
-#define	IS_STACK_REGION_IGNORED(t,e,a)		(IS_WITHIN_RANGE((ADDRINT) a, t.stack_range))
-#else
-#define IS_STACK_REGION_IGNORED(t,e,a)		(e < t.esp_min)
-#endif
 
 FILE *				trace;
 WIND::HANDLE		_pregion;
@@ -42,7 +30,39 @@ KNOB<string> KnobPinName(KNOB_MODE_WRITEONCE, "pintool", "pin_name",  "pin.exe",
 KNOB<string> KnobToolPath(KNOB_MODE_WRITEONCE, "pintool", "tool_path", "c_path_to_tool", "Absolute path to tool path");
 KNOB<string> KnobToolName(KNOB_MODE_WRITEONCE, "pintool", "tool_name", "dll_name", "Full name of the tool");
 
-inline void INFO_FillThreadInfo(SHM_THREAD_ENV * current_t) {
+struct ImageSectionInfo {
+	char SectionName[8];		//the macro is defined WinNT.h
+	char *SectionAddress;
+	int SectionSize;
+	ImageSectionInfo(const char* name) {
+		strcpy(SectionName, name); 
+	}
+};
+
+inline VOID INFO_SetSectionRange(FILE * trace, OUT UINT32 * range, char * section) {
+	char * dllImageBase = (char *) WIND::GetModuleHandle(NULL);
+	WIND::IMAGE_NT_HEADERS *pNtHdr = WIND::ImageNtHeader(WIND::GetModuleHandle(NULL));
+	WIND::IMAGE_SECTION_HEADER *pSectionHdr = (WIND::IMAGE_SECTION_HEADER *) (pNtHdr + 1);
+	ImageSectionInfo *pSectionInfo = NULL;
+	for ( int i = 0 ; i < pNtHdr->FileHeader.NumberOfSections ; i++ ) {
+		char *name = (char*) pSectionHdr->Name;
+		if ( memcmp(name, section, 5) == 0 ) {
+			pSectionInfo = new ImageSectionInfo(section);
+			pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
+			pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
+			fprintf(trace, "[!]   Region '%s': (%p, %p) (size=%d)\n", 
+				section, 
+				pSectionInfo->SectionAddress, 
+				pSectionInfo->SectionAddress + pSectionInfo->SectionSize,
+				pSectionInfo->SectionSize);
+			ASSIGN_RANGE(range, (UINT32) pSectionInfo->SectionAddress, (UINT32) pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
+			break;	  
+		}
+		pSectionHdr++;
+	}
+}
+
+inline VOID INFO_FillThreadInfo(SHM_THREAD_ENV * current_t) {
 	UINT64 value;
 	UINT32 stack_base;
 	UINT32 stack_limit;
@@ -69,13 +89,13 @@ inline void INFO_FillThreadInfo(SHM_THREAD_ENV * current_t) {
 	current_t->stack_range[0] = (ADDRINT) stack_limit;
 	current_t->stack_range[1] = (ADDRINT) stack_base;
 
-	set_range(trace, current_t->data_range, ".data");
-	set_range(trace, current_t->code_range, ".text");
+	INFO_SetSectionRange(trace, current_t->data_range, ".data");
+	INFO_SetSectionRange(trace, current_t->code_range, ".text");
 
 	DLL_FindAllDlls(trace, current_t);		
 }
 
-inline int INFO_GetThreadDllIndex(SHM_THREAD_ENV * current_t, ADDRINT ip) {
+inline INT INFO_GetThreadDllIndex(SHM_THREAD_ENV * current_t, ADDRINT ip) {
 	for(int i = 0; i < current_t->dll_count; i++) {
 		if(IS_WITHIN_RANGE(ip, current_t->dll_envs[i].code_range)) {
 			return i;
@@ -84,83 +104,27 @@ inline int INFO_GetThreadDllIndex(SHM_THREAD_ENV * current_t, ADDRINT ip) {
 	return -1;
 }
 
-inline int INFO_GetDllIndex(SHM_THREAD_ENV * current_t, ADDRINT current_ip) {
+inline INT INFO_GetDllIndex(SHM_THREAD_ENV * current_t, ADDRINT current_ip) {
 	int dll_index;
 	dll_index = INFO_GetThreadDllIndex(current_t, current_ip);
 	if(dll_index == -1) {
 		dll_index = DLL_FindDll(trace, current_t, current_ip);
 		if(dll_index == -1) {
-			dll_index = DLL_CreateDLL(trace, current_t, current_ip);
+			if(current_t->dll_count + 1 >= MAX_DLL_COUNT) {
+				fprintf(trace, "[-] Out Of Memory (dll count = %d)\n", current_t->dll_count);
+				dll_index = -1;
+			} else {
+				dll_index = DLL_CreateDLL(trace, current_t, current_ip);
+			}
 		}
 	}
-	ASSERT(dll_index != -1, "Still can't find dll index");
 	return dll_index;
 }
 
-
-inline VOID PERF_update_process_counters(SHM_PROCESS_ENV * current_p, UINT64 mw) {
-	AtomicAdd(current_p->total_counter, mw);
-}
-
-inline VOID PERF_update_thread_counters(SHM_THREAD_ENV * current_t, VOID * addr, VOID * ip, UINT64 mw) {
-	if(IS_WITHIN_RANGE((ADDRINT) addr, current_t->data_range)) {
-		current_t->data_counter = mw;
-		current_t->global_data_counter = mw;
-	} else if (IS_WITHIN_RANGE((ADDRINT) addr, current_t->stack_range)) {
-		current_t->stack_counter = mw;
-		current_t->global_stack_counter = mw;
-		if( (ADDRINT) ip >= current_t->esp_max) {
-			current_t->llstack_counter = mw;
-			current_t->global_slstack_counter = mw;
-		}
-	} else {
-		current_t->heap_counter = mw;
-		current_t->global_heap_counter = mw;
-	}
-}
-
-inline VOID PERF_update_dll_counters(SHM_THREAD_ENV * current_t, SHM_DLL_ENV * current_d, VOID * ip, UINT64 mw) {
-	if(IS_DLL_MONITORED(current_d->name)) {
-		if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->data_range) || 
-			IS_WITHIN_RANGE((ADDRINT) ip, current_d->data_range)) {
-			current_d->data_counter = mw;
-			current_t->global_data_counter = mw;
-		} else if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->stack_range)) {
-			current_d->stack_counter = mw;
-			current_t->global_stack_counter = mw;
-			if((ADDRINT) ip >= current_t->esp_max) {
-				current_d->llstack_counter = mw;
-				current_t->global_slstack_counter = mw;
-			}
-		} else {
-			current_d->heap_counter = mw;
-			current_t->global_heap_counter = mw;
-		}
-	}
-}
-
-inline VOID PERF_update_thread_stackpointer(SHM_THREAD_ENV * current_t, ADDRINT esp) {
-	if (current_t->esp_max == 0 && current_t->esp_min == 0) {
-		current_t->esp_min = esp;
-	} else {
-		if(esp > current_t->esp_min) {
-			current_t->esp_min = 0;
-			if(esp > current_t->esp_max) {
-				current_t->esp_max = esp;
-			}
-		} else {
-			current_t->esp_min = esp;
-		}
-	}
-}
-
-
 ADDRINT INST_AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
-	
 	if(_pcurrent->thread_lookup[th_id] == -1) {
 		return 1;
 	}
-
 	if(IS_STACK_REGION_IGNORED(_pcurrent->thread_envs[_pcurrent->thread_lookup[th_id]], esp_value, addr)) {
 		return 0;
 	}
@@ -170,14 +134,19 @@ ADDRINT INST_AffectStack(INT32 th_id, VOID * addr, UINT32 esp_value) {
 VOID INST_RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip, VOID * addr) {
 
 	SHM_THREAD_ENV * current_t;
-	SHM_PROCESS_ENV * current_p;// = attached_processes[0];
+	SHM_PROCESS_ENV * current_p = &_pmemory[_pindex];
 	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
+
+	if(th_id >= MAX_THREAD_COUNT) {
+		fprintf(trace, "[%d] Out Of Memory (thread count = %d)\n", current_p->process_id, th_id);
+		return;
+	}
 
 	if(_pcurrent->thread_lookup[th_id] == -1) {
 		// Atomically increase the counter and since only one thread is holding
 		// this th_id, we can be use that only the current thread is updating
 		// the lookup table with the updated value (atomically inc'ed)
-		current_p->thread_lookup[th_id] = AtomicInc(current_p->thread_count) - 1;
+		current_p->thread_lookup[th_id] = WIND::InterlockedIncrement64((long long *)&current_p->thread_count) - 1;
 		INFO_FillThreadInfo(&current_p->thread_envs[current_p->thread_lookup[th_id]]); 
 	}
 	current_t = &current_p->thread_envs[current_p->thread_lookup[th_id]];
@@ -185,10 +154,13 @@ VOID INST_RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip,
 	PERF_update_process_counters(current_p, mw);
 	PERF_update_thread_stackpointer(current_t, esp);
 	if(IS_WITHIN_RANGE((ADDRINT) ip, current_t->code_range)) {
-		PERF_update_thread_counters(current_t, addr, ip, mw);
+		PERF_update_thread_counters(current_t, (ADDRINT) addr, (ADDRINT) ip, mw);
 	} else {
 		int dll_index = INFO_GetDllIndex(current_t, (ADDRINT) ip);
-		PERF_update_dll_counters(current_t, &current_t->dll_envs[dll_index], ip, mw);
+		// Add the counters only if we stored the DLL
+		if(dll_index != -1) {
+			PERF_update_dll_counters(current_t, &current_t->dll_envs[dll_index], (ADDRINT) ip, mw);
+		}
 	}
 	
 }
@@ -212,7 +184,6 @@ VOID TOOL_Instruction(INS ins, VOID *v) {
 		}
 	}
 }
-
 
 INT32 TOOL_Usage() {
 	PIN_ERROR( "This Pintool prints a trace of memory addresses\n"
@@ -279,18 +250,35 @@ BOOL TOOL_FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
 }
 
 VOID TOOL_FlushStats() {
-
+	for (int i = 0; i < MAX_PROCESS_COUNT; i++) {
+		SHM_PROCESS_ENV * p_current = &_pmemory[i];
+		if(p_current->process_id == 0) {
+			break;
+		}
+		for(int j = 0; j < MAX_THREAD_COUNT; j++) {
+			if(p_current->thread_lookup[j] != -1) {
+				SHM_THREAD_ENV * t_current = &p_current->thread_envs[p_current->thread_lookup[j]];
+				fprintf(trace,"[-] Thread stack range [%p, %p]\n", t_current->stack_range[0], t_current->stack_range[1]);
+				fprintf(trace,"[-] Thread (%p) wrote %llu stack, %llu data, and %llu selse\n", i,
+				t_current->stack_counter, 
+				t_current->data_counter,
+				t_current->heap_counter);
+			}
+		}
+	}
 }
 
 VOID TOOL_CloseAndClean(INT32 code, VOID *v) {
-	TOOL_FlushStats();
+	if(KnobFirstProcess) {
+		TOOL_FlushStats();
+	}
 	fclose(trace);
 	WIND::UnmapViewOfFile(_pmemory); 
 	WIND::CloseHandle(_pregion);
 	WIND::CloseHandle(_cregion);
 }
 
-VOID TOOL_GetProcessName(CHAR ** name, INT32 pid) {
+VOID TOOL_GetProcessName(CHAR ** name, INT pid) {
 	WIND::HANDLE hSnapshot = WIND::CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
 	if(hSnapshot) {
 		WIND::PROCESSENTRY32 pe32;
@@ -317,7 +305,7 @@ int main(INT32 argc, CHAR **argv) {
 	 *	And print some debug info!
 	 */
 	CHAR * pname;
-	INT32 pid = PIN_GetPid();
+	INT pid = PIN_GetPid();
 	TOOL_GetProcessName(&pname, pid);
 	ASSERT(pname != NULL, "I need the name of the process!!");
 
@@ -352,6 +340,12 @@ int main(INT32 argc, CHAR **argv) {
 	WIND::UnmapViewOfFile(_cmemory); 
 	fprintf(trace, "[%d] Assigned index (%d) to the process\n", pid, _pindex);
 	fflush(trace);
+	if(_pindex + 1 >= MAX_PROCESS_COUNT) {
+		fprintf(trace, "[%d] Too many forked processes. Out of memory. Exiting...\n", pid);
+		fclose(trace);
+		WIND::CloseHandle(_cregion);
+		return -1;
+	}
 
 	/**
 	 *	Get a pointer to the SHM_PROCESS_ENV structure

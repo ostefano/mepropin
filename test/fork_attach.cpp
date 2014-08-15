@@ -41,18 +41,18 @@ bool WaitAndVerify(HANDLE process)
 {
     if(WaitForSingleObject( process, INFINITE ) == WAIT_FAILED)
     {
-        cout << "WaitForSingleObject failed" << endl;
+        cout << "[---] WaitForSingleObject failed" << endl;
         return FALSE;
     }
     DWORD processExitCode;
     if(GetExitCodeProcess (process, &processExitCode) == FALSE)
     {
-        cout << "GetExitCodeProcess Failed" << endl;
+        cout << "[---] GetExitCodeProcess Failed" << endl;
         return FALSE;
     }
     if(processExitCode != 0)
     {
-        cout << "Got unexpected exit code" << endl;
+        cout << "[---] Got unexpected exit code" << endl;
         return FALSE;
     }
     return TRUE;
@@ -61,8 +61,8 @@ bool WaitAndVerify(HANDLE process)
 int main(int argc, char * argv[])
 {
 
-    cout << "[*] Parent pid: " << GetCurrentProcessId() << endl;
-    cout << " Press any button after pin attached " << endl;
+    cout << "[---] Parent pid: " << GetCurrentProcessId() << endl;
+    cout << "[---] Press any button after pin attached... ";
     getchar();
 
 
@@ -75,20 +75,20 @@ int main(int argc, char * argv[])
     if (!CreateProcess(NULL,cmd  , NULL, NULL, TRUE, NULL, 
         NULL, NULL, &si, &pi))
     {
-        cout <<  "Couldn't create child process " << endl;
+        cout <<  "[---] Couldn't create child process " << endl;
         exit(0);
     }
     if(WaitAndVerify(pi.hProcess) == FALSE)
     {
         exit(0);
     }
-    cout << "First Process was created successfully!" << endl;
+    cout << "[---] First Process was created successfully!" << endl;
     
     //Create suspended
     if (!CreateProcess(NULL,cmd  , NULL, NULL, TRUE, CREATE_SUSPENDED, 
         NULL, NULL, &si, &pi))
     {
-        cout <<  "Couldn't create child process " << endl;
+        cout <<  "[---] Couldn't create child process " << endl;
         exit(0);
     }
     ResumeThread( pi.hThread );
@@ -97,20 +97,20 @@ int main(int argc, char * argv[])
     {
         exit(0);
     }  
-    cout << "Second Process was created successfully!" << endl;
+    cout << "[---] Second Process was created successfully!" << endl;
 
     //Create process as user
     HANDLE tokenHandle;
     BOOL res = OpenProcessToken(GetCurrentProcess(), TOKEN_ALL_ACCESS, &tokenHandle);
     if(!res)
     {
-        cout <<  "Couldn't open process token" << endl;
+        cout <<  "[---] Couldn't open process token" << endl;
         exit(0);
     }
     if (!CreateProcessAsUser(tokenHandle, NULL,cmd  , NULL, NULL, TRUE, CREATE_SUSPENDED, 
         NULL, NULL, &si, &pi))
     {
-        cout <<  "Couldn't create child process " << endl;
+        cout <<  "[---] Couldn't create child process " << endl;
         exit(0);
     }
     ResumeThread( pi.hThread );
@@ -119,7 +119,7 @@ int main(int argc, char * argv[])
     {
         exit(0);
     }  
-    cout << "Third Process was created successfully!" << endl;
+    cout << "[---] Third Process was created successfully!" << endl;
 
     
     Sleep(1000);
