@@ -1,6 +1,9 @@
 #ifndef COMMON_H
 #define COMMON_H
 
+#define	PRINT_THREAD_INFO					0
+#define PRINT_THREAD_MODULES_INFO			0
+
 #define MEPRO_LOG 							"C:\\Users\\Stefano\\mepropin\\pinatrace.out"
 
 #if !defined(PIN_H)

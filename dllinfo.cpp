@@ -45,11 +45,11 @@ VOID DLL_FindAllDlls(FILE * trace, SHM_THREAD_ENV *current_t) {
 
 		UINT32 dll_bss_start	= (UINT32) (ImageBaseAddress + header->BaseOfData);
 		UINT32 dll_bss_end		= (UINT32) (ImageBaseAddress + header->BaseOfData + header->SizeOfInitializedData + header->SizeOfUninitializedData);
-
+#if PRINT_THREAD_MODULES_INFO
 		fprintf(trace, "[!]   Module [%S] loaded at [%p] with EP at [%p]\n", cursor->BaseDllName.Buffer, cursor->BaseAddress, cursor->EntryPoint);
 		fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, header->SizeOfCode);
 		fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end,  header->SizeOfInitializedData + header->SizeOfUninitializedData);
-
+#endif
 		SHM_DLL_ENV * empty_dll = &current_t->dll_envs[current_t->dll_count];
 		sprintf_s(empty_dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
 		ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
@@ -77,11 +77,11 @@ INT DLL_FindDll(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT ip) {
 
 			UINT32 dll_bss_start	= (UINT32) (ImageBaseAddress + header->BaseOfData);
 			UINT32 dll_bss_end		= (UINT32) (ImageBaseAddress + header->BaseOfData + header->SizeOfInitializedData + header->SizeOfUninitializedData);
-			
+#if PRINT_THREAD_MODULES_INFO			
 			fprintf(trace, "[!]   Module [%S] loaded at [%p] with EP at [%p]\n", cursor->BaseDllName.Buffer, cursor->BaseAddress, cursor->EntryPoint);
 			fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, header->SizeOfCode);
 			fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end,  header->SizeOfInitializedData + header->SizeOfUninitializedData);
-			
+#endif			
 			SHM_DLL_ENV * empty_dll = &current_t->dll_envs[current_t->dll_count];
 			sprintf_s(empty_dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
 			ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
@@ -104,11 +104,11 @@ INT DLL_CreateDLL(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT current_ip) 
 	UINT32 dll_code_end		= page_top;
 	UINT32 dll_bss_start	= dll_code_end;
 	UINT32 dll_bss_end		= dll_bss_start + page_size;
-
+#if PRINT_THREAD_MODULES_INFO
 	fprintf(trace, "[!]   Module [FAKE] loaded for address %p\n", current_ip);
 	fprintf(trace, "\t Code range (%p,%p) (%d bytes)\n", dll_code_start, dll_code_end, page_size);
 	fprintf(trace, "\t Data range (%p,%p) (%d bytes)\n", dll_bss_start, dll_bss_end, page_size);
-	
+#endif	
 	SHM_DLL_ENV * empty_dll = &current_t->dll_envs[current_t->dll_count];
 	strcpy_s(empty_dll->name, strlen("fake.dll"), "fake.dll");
 	ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);

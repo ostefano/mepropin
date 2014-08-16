@@ -50,11 +50,13 @@ inline VOID INFO_SetSectionRange(FILE * trace, OUT UINT32 * range, char * sectio
 			pSectionInfo = new ImageSectionInfo(section);
 			pSectionInfo->SectionAddress = dllImageBase + pSectionHdr->VirtualAddress;
 			pSectionInfo->SectionSize = pSectionHdr->Misc.VirtualSize;
+#if PRINT_THREAD_INFO			
 			fprintf(trace, "[!]   Region '%s': (%p, %p) (size=%d)\n", 
 				section, 
 				pSectionInfo->SectionAddress, 
 				pSectionInfo->SectionAddress + pSectionInfo->SectionSize,
 				pSectionInfo->SectionSize);
+#endif
 			ASSIGN_RANGE(range, (UINT32) pSectionInfo->SectionAddress, (UINT32) pSectionInfo->SectionAddress + pSectionInfo->SectionSize);
 			break;	  
 		}
@@ -79,13 +81,16 @@ inline VOID INFO_FillThreadInfo(SHM_THREAD_ENV * current_t) {
 	PIN_SafeCopy (&stack_base, teb32_address+1, sizeof(UINT32));
 	PIN_SafeCopy (&stack_limit, teb32_address+2, sizeof(UINT32));
 
+#if PRINT_THREAD_INFO
 	fprintf(trace, "[*] New thread detected\n");
 	fprintf(trace, "[!]	 TEB64 address *(%016X): %016X\n", teb64_address, *teb64_address);
 	fprintf(trace, "[!]		 WOW64 flag = %p\n", value);
 	fprintf(trace, "[!]	 TEB32 address: %p\n", teb32_address);
 	fprintf(trace, "[!]		 StackBase:	%p\n", stack_base);
 	fprintf(trace, "[!]		 StackLimit:	%p\n", stack_limit);
+#endif
 
+	current_t->thread_id = (UINT32) teb32_address;
 	current_t->stack_range[0] = (ADDRINT) stack_limit;
 	current_t->stack_range[1] = (ADDRINT) stack_base;
 
@@ -111,7 +116,7 @@ inline INT INFO_GetDllIndex(SHM_THREAD_ENV * current_t, ADDRINT current_ip) {
 		dll_index = DLL_FindDll(trace, current_t, current_ip);
 		if(dll_index == -1) {
 			if(current_t->dll_count + 1 >= MAX_DLL_COUNT) {
-				fprintf(trace, "[-] Out Of Memory (dll count = %d)\n", current_t->dll_count);
+				fprintf(trace, "[-] Skipping DLL -> MEPRO Out Of Memory (dll count = %d)\n", current_t->dll_count+1);
 				dll_index = -1;
 			} else {
 				dll_index = DLL_CreateDLL(trace, current_t, current_ip);
@@ -138,7 +143,7 @@ VOID INST_RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip,
 	ADDRINT esp = PIN_GetContextReg(ctx, REG_ESP);
 
 	if(th_id >= MAX_THREAD_COUNT) {
-		fprintf(trace, "[%d] Out Of Memory (thread count = %d)\n", current_p->process_id, th_id);
+		fprintf(trace, "[%d] Skipping Thread -> MEPRO Out Of Memory (thread count = %d)\n", current_p->process_id, th_id+1);
 		return;
 	}
 
@@ -250,21 +255,36 @@ BOOL TOOL_FollowChild(CHILD_PROCESS childProcess, VOID * userData) {
 }
 
 VOID TOOL_FlushStats() {
+	fprintf(trace, "\n");
+	fprintf(trace, "[!] ****************** MEPROPIN statistics *******************\n");
+	fprintf(trace, "[!]\n");
 	for (int i = 0; i < MAX_PROCESS_COUNT; i++) {
 		SHM_PROCESS_ENV * p_current = &_pmemory[i];
 		if(p_current->process_id == 0) {
 			break;
 		}
+		fprintf(trace, "[%d] Statistics about process (%s) with index %d (thread count = %d)\n", 
+			p_current->process_id, 
+			p_current->name, 
+			i,
+			p_current->thread_count);
 		for(int j = 0; j < MAX_THREAD_COUNT; j++) {
 			if(p_current->thread_lookup[j] != -1) {
 				SHM_THREAD_ENV * t_current = &p_current->thread_envs[p_current->thread_lookup[j]];
-				fprintf(trace,"[-] Thread stack range [%p, %p]\n", t_current->stack_range[0], t_current->stack_range[1]);
-				fprintf(trace,"[-] Thread (%p) wrote %llu stack, %llu data, and %llu selse\n", i,
-				t_current->stack_counter, 
-				t_current->data_counter,
-				t_current->heap_counter);
+				fprintf(trace,"[%d] [Thread %p] Stack range [%p, %p]\n", 
+					p_current->process_id, 
+					t_current->thread_id,
+					t_current->stack_range[0], 
+					t_current->stack_range[1]);
+				fprintf(trace,"[%d] [Thread %p] Wrote STACK %llu bytes, DATA %llu bytes, and HEAP %llu bytes\n", 
+					p_current->process_id,
+					t_current->thread_id,
+					t_current->stack_counter, 
+					t_current->data_counter,
+					t_current->heap_counter);
 			}
 		}
+		fprintf(trace, "\n");
 	}
 }
 
@@ -314,8 +334,9 @@ int main(INT32 argc, CHAR **argv) {
 	if(KnobFirstProcess) {
 		// Reset the file size
 		_chsize_s(_fileno(trace), 0);
-		fprintf(trace, "[%d] ****************** MEPROPIN initialized ******************\n", pid);
-		fprintf(trace, "[%d] Will use %d bytes of shared memory per snapshot\n", pid, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+		fprintf(trace, "[!] ****************** MEPROPIN initialized ******************\n");
+		fprintf(trace, "[!] Will use %d bytes of shared memory per snapshot\n", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+		fprintf(trace, "[!]\n");
 		fprintf(trace, "[%d] First process (%s) instrumented\n", pid, pname);
 	} else {
 		fprintf(trace, "[%d] Child process (%s) instrumented\n", pid, pname);
@@ -341,7 +362,7 @@ int main(INT32 argc, CHAR **argv) {
 	fprintf(trace, "[%d] Assigned index (%d) to the process\n", pid, _pindex);
 	fflush(trace);
 	if(_pindex + 1 >= MAX_PROCESS_COUNT) {
-		fprintf(trace, "[%d] Too many forked processes. Out of memory. Exiting...\n", pid);
+		fprintf(trace, "[%d] Skipping process -> MEPRO Out of memory (process count = %d)\n", pid, _pindex+1);
 		fclose(trace);
 		WIND::CloseHandle(_cregion);
 		return -1;
@@ -371,7 +392,7 @@ int main(INT32 argc, CHAR **argv) {
 	 *
 	 */
     PIN_AddFollowChildProcessFunction(TOOL_FollowChild, 0);
-	//INS_AddInstrumentFunction(TOOL_Instruction, 0);
+	INS_AddInstrumentFunction(TOOL_Instruction, 0);
 	PIN_AddFiniFunction(TOOL_CloseAndClean, 0);
     PIN_StartProgram();
     return 0;

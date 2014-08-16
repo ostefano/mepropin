@@ -84,7 +84,7 @@ int main(int argc, char * argv[])
     }
     cout << "[---] First Process was created successfully!" << endl;
     
-    //Create suspended
+    //Create suspended 
     if (!CreateProcess(NULL,cmd  , NULL, NULL, TRUE, CREATE_SUSPENDED, 
         NULL, NULL, &si, &pi))
     {
@@ -120,7 +120,6 @@ int main(int argc, char * argv[])
         exit(0);
     }  
     cout << "[---] Third Process was created successfully!" << endl;
-
     
     Sleep(1000);
 
