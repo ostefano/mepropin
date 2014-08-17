@@ -1,6 +1,7 @@
 !include <win32.mak>
 
-TARGETS = repmove.exe
+TARGETS = repmove.exe fork.exe child.exe fork_attach.exe
+LIBS = Advapi32.lib 
 
 all: $(TARGETS)
 
@@ -13,9 +14,11 @@ all: $(TARGETS)
 .c.obj:
 	$(cc) /nologo /EHsc /FAsc /c $(INCLUDES) $*.c
 
-$(TARGETS): $*.obj 
-	$(link) /nologo -out:$@ $** 
+.cpp.obj:
+	$(cc) /nologo /EHsc /FAsc /c $(INCLUDES) $*.cpp
 
+$(TARGETS): $*.obj 
+	$(link) /nologo $(LIBS) -out:$@ $** 
 
 clean:
 	del *.obj 
