@@ -7,6 +7,7 @@
 #include "common.h"
 #include "dllinfo.h"
 #include "perfcounters.h"
+#include "snapshot.h"
 
 using namespace std;
 
@@ -16,13 +17,28 @@ namespace WIND {
 	#include <TlHelp32.h>
 }
 
-FILE *				trace;
+// Variables 
+WIND::HANDLE		_sregion;
+INT32 *				_smemory;
+
+// Variable holding the statistics
 WIND::HANDLE		_pregion;
-WIND::HANDLE		_cregion;
 SHM_PROCESS_ENV *	_pmemory;
-SHM_PROCESS_ENV *	_pcurrent;
+
+// Variables holding the process counters
+WIND::HANDLE		_cregion;
 INT32 *				_cmemory;
+
+// Shortcut to access the current process
+SHM_PROCESS_ENV *	_pcurrent;
 INT32				_pindex;
+
+// Log file
+FILE *				trace;
+
+
+PIN_MUTEX			mutex_1;
+
 
 KNOB<BOOL> KnobFirstProcess(KNOB_MODE_WRITEONCE, "pintool", "first_process", "1", "If this is the first process to be instrumented");
 KNOB<string> KnobPinPath(KNOB_MODE_WRITEONCE, "pintool", "pin_path",  "c_path_to_pin", "Aboslute path to PIN");
@@ -151,8 +167,10 @@ VOID INST_RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip,
 		// Atomically increase the counter and since only one thread is holding
 		// this th_id, we can be use that only the current thread is updating
 		// the lookup table with the updated value (atomically inc'ed)
+		PIN_MutexLock(&mutex_1); 
 		current_p->thread_lookup[th_id] = WIND::InterlockedIncrement64((long long *)&current_p->thread_count) - 1;
-		INFO_FillThreadInfo(&current_p->thread_envs[current_p->thread_lookup[th_id]]); 
+		INFO_FillThreadInfo(&current_p->thread_envs[current_p->thread_lookup[th_id]]);
+		PIN_MutexUnlock(&mutex_1);
 	}
 	current_t = &current_p->thread_envs[current_p->thread_lookup[th_id]];
 
@@ -289,13 +307,19 @@ VOID TOOL_FlushStats() {
 }
 
 VOID TOOL_CloseAndClean(INT32 code, VOID *v) {
+	PIN_MutexFini(&mutex_1);
+
 	if(KnobFirstProcess) {
 		TOOL_FlushStats();
+		WIND::UnmapViewOfFile(_smemory);
+		WIND::CloseHandle(_sregion);
 	}
 	fclose(trace);
+	
+	WIND::CloseHandle(_cregion);
+
 	WIND::UnmapViewOfFile(_pmemory); 
 	WIND::CloseHandle(_pregion);
-	WIND::CloseHandle(_cregion);
 }
 
 VOID TOOL_GetProcessName(CHAR ** name, INT pid) {
@@ -313,6 +337,36 @@ VOID TOOL_GetProcessName(CHAR ** name, INT pid) {
 			} while(WIND::Process32Next(hSnapshot,&pe32));
 		 }
 		 WIND::CloseHandle(hSnapshot);
+	}
+}
+
+VOID Spinner(VOID * arg) {
+	while(1) {
+		if (PIN_IsProcessExiting()) {
+			PIN_ExitThread(0);
+		}
+		INT32 input = WIND::InterlockedExchange((long *)_smemory, 0);
+#if SPINNER_ENABLE_LOG
+		input = 1;
+#endif
+		switch(input) {
+			case 2:
+				// Remove instrumentation
+				PIN_Detach();
+				PIN_ExitThread(0);
+				break;
+			case 1:
+				// Take snapshot
+				PIN_MutexLock(&mutex_1); 
+				SNP_TakeSnapshot(_pmemory, "TEST");
+				PIN_MutexUnlock(&mutex_1);
+				break;
+			case 0:
+			default:
+				// Spin
+				;
+		}
+		PIN_Sleep(SPINNER_ENABLE_SLEEP); 
 	}
 }
 
@@ -381,12 +435,31 @@ int main(INT32 argc, CHAR **argv) {
 	// Reset all the memory (should be zeroed already)
 	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
 	// Put pid, name, and set -1 the lookup table
-	_pmemory[_pindex].process_id = pid;
 	strcpy_s(_pmemory[_pindex].name, strlen(pname) + 1, pname);
 	memset(_pmemory[_pindex].thread_lookup, -1, sizeof(INT32) * MAX_THREAD_COUNT);
+	WIND::InterlockedExchange(&_pmemory[_pindex].process_id, pid);
+	//_pmemory[_pindex].process_id = pid;
 	// Free the pointer with the name (we do not need it anymore)
 	free(pname);
 	
+
+	/**
+	 *	Spin a thread that checks a variable (loose syncronization)
+	 *	to log data
+	 */
+#if SPINNER_ENABLE
+	if(KnobFirstProcess) {
+		_sregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(INT32), "mepro_snapshot");
+		ASSERT(_cregion != NULL, "Fatal Error by CreateFileMapping");
+		_smemory = (INT32 *) WIND::MapViewOfFile(_sregion, FILE_MAP_WRITE, 0, 0, sizeof(INT32));
+		ASSERT(_cmemory != NULL, "Fatal Error by MapVieOfFile");
+		*_smemory = 0;
+		PIN_SpawnInternalThread(Spinner,0,0,0);
+	} 
+#endif
+	PIN_MutexInit(&mutex_1);
+	
+
 	/**
 	 *	Ok, do the magic with the instrumentation! Everything is ready!
 	 *

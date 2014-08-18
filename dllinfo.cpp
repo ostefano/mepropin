@@ -54,7 +54,9 @@ VOID DLL_FindAllDlls(FILE * trace, SHM_THREAD_ENV *current_t) {
 		sprintf_s(empty_dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
 		ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
 		ASSIGN_RANGE(empty_dll->data_range,	dll_bss_start,	dll_bss_end);
-		current_t->dll_count++;
+		
+		//current_t->dll_count++;
+		InterlockedIncrement16((short *)&current_t->dll_count);
 
 		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
 	}
@@ -86,7 +88,9 @@ INT DLL_FindDll(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT ip) {
 			sprintf_s(empty_dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
 			ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
 			ASSIGN_RANGE(empty_dll->data_range,	dll_bss_start,	dll_bss_end);
-			return current_t->dll_count++;
+			
+			//return current_t->dll_count++;
+			return InterlockedIncrement16((short *)&current_t->dll_count);
 		}
 		cursor = (PLDR_DATA_ENTRY)cursor->InMemoryOrderModuleList.Flink;
 	}
@@ -114,5 +118,6 @@ INT DLL_CreateDLL(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT current_ip) 
 	ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
 	ASSIGN_RANGE(empty_dll->data_range,	dll_bss_start,	dll_bss_end);
 	
-	return current_t->dll_count++;
+	//return current_t->dll_count++;
+	return InterlockedIncrement16((short *)&current_t->dll_count);
 }

@@ -13,7 +13,7 @@ TOOL_LPATHS := $(TOOL_LPATHS) /LIBPATH:lib\\
 TOOL_CXXFLAGS := $(TOOL_CXXFLAGS) /Iinc\\ 
 
 # Build
-$(OBJDIR)mepro$(PINTOOL_SUFFIX): $(OBJDIR)mepro$(OBJ_SUFFIX) $(OBJDIR)dllinfo$(OBJ_SUFFIX)  
+$(OBJDIR)mepro$(PINTOOL_SUFFIX): $(OBJDIR)mepro$(OBJ_SUFFIX) $(OBJDIR)dllinfo$(OBJ_SUFFIX) $(OBJDIR)snapshot$(OBJ_SUFFIX)  
 	$(LINKER) $(TOOL_LDFLAGS) $(LINK_EXE)$@ $^ $(TOOL_LPATHS) $(TOOL_LIBS) 
 
 # Build the intermediate object file.

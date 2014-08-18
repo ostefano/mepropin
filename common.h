@@ -4,6 +4,12 @@
 #define	PRINT_THREAD_INFO					0
 #define PRINT_THREAD_MODULES_INFO			0
 
+#define SPINNER_ENABLE						1
+#define SPINNER_ENABLE_LOG					1
+#define SPINNER_ENABLE_SLEEP				1000
+
+#define LOG_OUTPUT							"C:\\Users\\Stefano\\mepropin\\"
+#define LOG_OUTPUT_TEST						"C:\\Users\\Stefano\\mepropin\\pinatrace.log"
 #define MEPRO_LOG 							"C:\\Users\\Stefano\\mepropin\\pinatrace.out"
 
 #if !defined(PIN_H)
