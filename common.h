@@ -7,6 +7,7 @@
 #define SPINNER_ENABLE						1
 #define SPINNER_ENABLE_LOG					1
 #define SPINNER_ENABLE_SLEEP				1000
+#define SPINNER_SNAPSHOT_LIMIT				20
 
 #define LOG_OUTPUT							"C:\\Users\\Stefano\\mepropin\\"
 #define LOG_OUTPUT_TEST						"C:\\Users\\Stefano\\mepropin\\pinatrace.log"
@@ -34,7 +35,7 @@
 #define MAX_CHAR_COUNT						128
 #define MAX_THREAD_COUNT					64
 #define MAX_DLL_COUNT						256
-#define MAX_PROCESS_COUNT					5
+#define MAX_PROCESS_COUNT					4
 
 #if (WRITES_STACK_SCHEME & WRITES_STACK_ALL_SCHEME)
 #define	IS_STACK_REGION_IGNORED(t,e,a)		(IS_WITHIN_RANGE((ADDRINT) a, t.stack_range))

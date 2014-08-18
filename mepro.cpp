@@ -341,14 +341,22 @@ VOID TOOL_GetProcessName(CHAR ** name, INT pid) {
 }
 
 VOID Spinner(VOID * arg) {
+
+	int snapshot_id = 0;
 	while(1) {
 		if (PIN_IsProcessExiting()) {
 			PIN_ExitThread(0);
 		}
 		INT32 input = WIND::InterlockedExchange((long *)_smemory, 0);
-#if SPINNER_ENABLE_LOG
-		input = 1;
-#endif
+
+		if(SPINNER_ENABLE_LOG) {
+			input = 1;
+		}
+
+		if(snapshot_id == SPINNER_SNAPSHOT_LIMIT) {
+			input = 2;
+		}
+
 		switch(input) {
 			case 2:
 				// Remove instrumentation
@@ -358,8 +366,9 @@ VOID Spinner(VOID * arg) {
 			case 1:
 				// Take snapshot
 				PIN_MutexLock(&mutex_1); 
-				SNP_TakeSnapshot(_pmemory, "TEST");
+				SNP_TakeSnapshot(_pmemory, snapshot_id);
 				PIN_MutexUnlock(&mutex_1);
+				snapshot_id++;
 				break;
 			case 0:
 			default:

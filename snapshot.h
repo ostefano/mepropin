@@ -3,6 +3,6 @@
 
 #include "common.h"
 
-void	SNP_TakeSnapshot(SHM_PROCESS_ENV * pmem, char UUID[]); 
+void	SNP_TakeSnapshot(SHM_PROCESS_ENV * pmem, int id); 
 
 #endif
