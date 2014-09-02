@@ -62,6 +62,7 @@ typedef struct {
 	CHAR name[MAX_CHAR_COUNT];
 	ADDRINT data_range[2];
 	ADDRINT code_range[2];
+
 	UINT64 llstack_counter;
 	UINT64 stack_counter;
 	UINT64 heap_counter;
@@ -88,19 +89,20 @@ typedef struct {
 	UINT64 global_heap_counter;
 	UINT64 global_data_counter;
 
-	UINT16	dll_count;
-	INT32 dll_lookup[MAX_DLL_COUNT];
+	UINT16		dll_count;
+	UINT32		dll_lookup[MAX_DLL_COUNT];
 	SHM_DLL_ENV	dll_envs[MAX_DLL_COUNT];
 } SHM_THREAD_ENV;
 
 typedef struct {
+	BOOL x64;
 	CHAR name[MAX_CHAR_COUNT];
 	UINT32 process_id;
 	UINT64 total_counter;
 
-	UINT16 thread_count;
-	INT32 thread_lookup[MAX_THREAD_COUNT];
-	SHM_THREAD_ENV thread_envs[MAX_THREAD_COUNT];
+	UINT16			thread_count;
+	UINT32			thread_lookup[MAX_THREAD_COUNT];
+	SHM_THREAD_ENV	thread_envs[MAX_THREAD_COUNT];
 } SHM_PROCESS_ENV;
 
 
