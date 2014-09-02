@@ -399,6 +399,9 @@ int main(INT32 argc, CHAR **argv) {
 		_chsize_s(_fileno(trace), 0);
 		fprintf(trace, "[!] ****************** MEPROPIN initialized ******************\n");
 		fprintf(trace, "[!] Will use %d bytes of shared memory per snapshot\n", sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+		fprintf(trace, "[!] SHM_PROCESS %d bytes (%d elems)\n", sizeof(SHM_PROCESS_ENV), MAX_PROCESS_COUNT);
+		fprintf(trace, "[!] SHM_THREAD %d bytes (%d elems)\n", sizeof(SHM_THREAD_ENV), MAX_THREAD_COUNT);
+		fprintf(trace, "[!] SHM_DLL %d bytes (%d elems)\n", sizeof(SHM_DLL_ENV), MAX_DLL_COUNT);
 		fprintf(trace, "[!]\n");
 		fprintf(trace, "[%d] First process (%s) instrumented\n", pid, pname);
 	} else {
