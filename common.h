@@ -53,52 +53,58 @@ typedef void * PVOID;
 typedef unsigned long ULONG;
 
 typedef struct {
-	short max_char_count;
-	short max_thread_count;
-	short max_dll_count;
-} SHM_CONFIG;
+	UINT64		dll_id;
+	CHAR		name[MAX_CHAR_COUNT];
 
-typedef struct {
-	CHAR name[MAX_CHAR_COUNT];
-	ADDRINT data_range[2];
-	ADDRINT code_range[2];
+	UINT64		data_range[2];
+	UINT64		code_range[2];
 
-	UINT64 llstack_counter;
-	UINT64 stack_counter;
-	UINT64 heap_counter;
-	UINT64 data_counter;
+	UINT64		llstack_counter;
+	UINT64		stack_counter;
+	UINT64		heap_counter;
+	UINT64		data_counter;
 } SHM_DLL_ENV;
 
 typedef struct {
-	UINT32 thread_id;
+	UINT32		thread_id;
 
-	ADDRINT esp_max;
-	ADDRINT esp_min;
+	UINT64		esp_max;
+	UINT64		esp_min;
 
-	ADDRINT code_range[2];
-	ADDRINT data_range[2];
-	ADDRINT stack_range[2];
+	UINT64		code_range[2];
+	UINT64		data_range[2];
+	UINT64		stack_range[2];
 
-	UINT64 llstack_counter;			// All the writes minus the dlls
-	UINT64 stack_counter;
-	UINT64 heap_counter;
-	UINT64 data_counter;
+	UINT64		llstack_counter;
+	UINT64		stack_counter;
+	UINT64		heap_counter;
+	UINT64		data_counter;
 
-	UINT64 global_slstack_counter;	// All the writes plus the dlls
-	UINT64 global_stack_counter;	
-	UINT64 global_heap_counter;
-	UINT64 global_data_counter;
+	UINT64		global_slstack_counter;
+	UINT64		global_stack_counter;	
+	UINT64		global_heap_counter;
+	UINT64		global_data_counter;
 
 	UINT16		dll_count;
 	UINT32		dll_lookup[MAX_DLL_COUNT];
 	SHM_DLL_ENV	dll_envs[MAX_DLL_COUNT];
 } SHM_THREAD_ENV;
 
+
 typedef struct {
-	BOOL x64;
-	CHAR name[MAX_CHAR_COUNT];
-	UINT32 process_id;
-	UINT64 total_counter;
+	UINT16		max_char_count;
+	UINT16		max_thread_count;
+	UINT16		max_dll_count;
+} SHM_CONFIG;
+
+typedef struct {
+	SHM_CONFIG		configuration;
+
+	UINT32			process_id;
+	BOOL			process_arch;
+	CHAR			process_name[MAX_CHAR_COUNT];
+
+	UINT64			global_counter;
 
 	UINT16			thread_count;
 	UINT32			thread_lookup[MAX_THREAD_COUNT];
