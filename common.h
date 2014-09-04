@@ -98,12 +98,14 @@ typedef struct {
 } SHM_CONFIG;
 
 typedef struct {
+
 	SHM_CONFIG		configuration;
 
 	UINT32			process_id;
 	BOOL			process_arch;
 	CHAR			process_name[MAX_CHAR_COUNT];
 
+	UINT64			timestamp;
 	UINT64			global_counter;
 
 	UINT16			thread_count;
