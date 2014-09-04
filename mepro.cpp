@@ -168,7 +168,7 @@ VOID INST_RecordMemWrite(INT32 th_id, const CONTEXT * ctx, UINT32 mw, VOID * ip,
 		// this th_id, we can be use that only the current thread is updating
 		// the lookup table with the updated value (atomically inc'ed)
 		PIN_MutexLock(&mutex_1); 
-		current_p->thread_lookup[th_id] = WIND::InterlockedIncrement64((long long *)&current_p->thread_count) - 1;
+		current_p->thread_lookup[th_id] = WIND::InterlockedIncrement16((short *)&current_p->thread_count) - 1;
 		INFO_FillThreadInfo(&current_p->thread_envs[current_p->thread_lookup[th_id]]);
 		PIN_MutexUnlock(&mutex_1);
 	}
