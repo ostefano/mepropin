@@ -254,6 +254,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="csiphash.cpp" />
     <ClCompile Include="heapinfo.cpp" />
     <ClCompile Include="mepro.cpp" />
     <ClCompile Include="dllinfo.cpp" />
