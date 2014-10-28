@@ -30,7 +30,7 @@ inline BOOL PERF_dll_whitelist_filter(char *dll_name) {
 }
 
 inline VOID PERF_update_process_counters(SHM_PROCESS_ENV * current_p, UINT64 mw) {
-	WIND::InterlockedExchangeAdd64((long long*)&current_p->total_counter, mw);
+	WIND::InterlockedExchangeAdd64((long long*)&current_p->global_counter, mw);
 }
 
 inline VOID PERF_update_thread_counters(SHM_THREAD_ENV * current_t, ADDRINT addr, ADDRINT ip, UINT64 mw) {

@@ -55,7 +55,7 @@ struct ImageSectionInfo {
 	}
 };
 
-inline VOID INFO_SetSectionRange(FILE * trace, OUT UINT32 * range, char * section) {
+inline VOID INFO_SetSectionRange(FILE * trace, OUT UINT64 * range, char * section) {
 	char * dllImageBase = (char *) WIND::GetModuleHandle(NULL);
 	WIND::IMAGE_NT_HEADERS *pNtHdr = WIND::ImageNtHeader(WIND::GetModuleHandle(NULL));
 	WIND::IMAGE_SECTION_HEADER *pSectionHdr = (WIND::IMAGE_SECTION_HEADER *) (pNtHdr + 1);
@@ -283,7 +283,7 @@ VOID TOOL_FlushStats() {
 		}
 		fprintf(trace, "[%d] Statistics about process (%s) with index %d (thread count = %d)\n", 
 			p_current->process_id, 
-			p_current->name, 
+			p_current->process_name, 
 			i,
 			p_current->thread_count);
 		for(int j = 0; j < MAX_THREAD_COUNT; j++) {
@@ -420,7 +420,7 @@ int main(INT32 argc, CHAR **argv) {
 		// If this is the first process, the ID is 0 and we have to store the number
 		*_cmemory = 0;
 	} else {
-		// If this is no the first, we increment it (atomically) and we use the new value as index
+		// If this is not the first, we increment it (atomically) and we use the new value as index
 		WIND::InterlockedIncrement((long *)_cmemory);
 	}
 	_pindex = *_cmemory;
@@ -436,23 +436,30 @@ int main(INT32 argc, CHAR **argv) {
 
 	/**
 	 *	Get a pointer to the SHM_PROCESS_ENV structure
-	 *	In this case do NOT unmap and to not release the handle (DUH)
+	 *	In this case do NOT unmap and do not release the handle (DUH)
 	 */
 	_pregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT, "mepro");
     ASSERT(_pregion != NULL, "Fatal Error by CreateFileMapping");
 	_pmemory = (SHM_PROCESS_ENV *) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
 	ASSERT(_pmemory != NULL, "Fatal Error by MapVieOfFile");
+	// If this is the first process do a favour and zero everything
+	if(KnobFirstProcess) {
+		RtlZeroMemory(_pmemory, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	}
 	_pcurrent = &_pmemory[_pindex];
 
 	// Reset all the memory (should be zeroed already)
-	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
+	// memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
 	// Put pid, name, and set -1 the lookup table
-	strcpy_s(_pmemory[_pindex].name, strlen(pname) + 1, pname);
+	strcpy_s(_pmemory[_pindex].process_name, strlen(pname) + 1, pname);
 	memset(_pmemory[_pindex].thread_lookup, -1, sizeof(INT32) * MAX_THREAD_COUNT);
 	WIND::InterlockedExchange(&_pmemory[_pindex].process_id, pid);
-	//_pmemory[_pindex].process_id = pid;
 	// Free the pointer with the name (we do not need it anymore)
 	free(pname);
+	// Put some configuration
+	_pmemory[_pindex].configuration.max_char_count = MAX_CHAR_COUNT;
+	_pmemory[_pindex].configuration.max_dll_count = MAX_DLL_COUNT;
+	_pmemory[_pindex].configuration.max_thread_count = MAX_THREAD_COUNT;
 	
 
 	/**

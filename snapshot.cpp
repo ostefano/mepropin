@@ -20,7 +20,17 @@ void generate_filename(char * ptr, int id_int) {
 }
 
 
+UINT64 get_timestamp() {
+	LARGE_INTEGER timer;
+	QueryPerformanceFrequency(&timer);
+	return timer.QuadPart;
+}
+
 void SNP_TakeSnapshot(SHM_PROCESS_ENV * pmem, int id) {
+	UINT64 timer = get_timestamp();
+	for(int i = 0; i < MAX_PROCESS_COUNT; i++) {
+		pmem[i].timestamp = timer;
+	}
 	char * filename = (char *) malloc(sizeof(char)*128);
 	generate_filename(filename, id);
 	FILE * output = fopen(filename, "w");

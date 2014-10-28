@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <strsafe.h>
 #include <Winternl.h>
+#include <stdint.h>
 
 #include "common.h"
 #include "dllinfo.h"
@@ -29,6 +30,12 @@ __declspec(naked) PLDR_DATA_ENTRY firstLdrDataEntry() {
 	}
 }
 
+char key[16] = {0,1,2,3,4,5,6,7,8,9,0xa,0xb,0xc,0xd,0xe,0xf};
+
+uint64_t siphash24(const void *src,
+                   unsigned long src_sz,
+                   const char key[16]);
+
 VOID DLL_FindAllDlls(FILE * trace, SHM_THREAD_ENV *current_t) {
 		
 	PLDR_DATA_ENTRY cursor;
@@ -52,6 +59,7 @@ VOID DLL_FindAllDlls(FILE * trace, SHM_THREAD_ENV *current_t) {
 #endif
 		SHM_DLL_ENV * empty_dll = &current_t->dll_envs[current_t->dll_count];
 		sprintf_s(empty_dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
+		empty_dll->dll_id = siphash24(empty_dll->name, strlen(empty_dll->name), key);
 		ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
 		ASSIGN_RANGE(empty_dll->data_range,	dll_bss_start,	dll_bss_end);
 		
@@ -86,6 +94,7 @@ INT DLL_FindDll(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT ip) {
 #endif			
 			SHM_DLL_ENV * empty_dll = &current_t->dll_envs[current_t->dll_count];
 			sprintf_s(empty_dll->name, cursor->BaseDllName.Length, "%S", cursor->BaseDllName.Buffer);
+			empty_dll->dll_id = siphash24(empty_dll->name, strlen(empty_dll->name), key);
 			ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
 			ASSIGN_RANGE(empty_dll->data_range,	dll_bss_start,	dll_bss_end);
 			
@@ -115,6 +124,7 @@ INT DLL_CreateDLL(FILE * trace, SHM_THREAD_ENV * current_t, ADDRINT current_ip) 
 #endif	
 	SHM_DLL_ENV * empty_dll = &current_t->dll_envs[current_t->dll_count];
 	strcpy_s(empty_dll->name, strlen("fake.dll"), "fake.dll");
+	empty_dll->dll_id = siphash24(empty_dll->name, strlen(empty_dll->name), key);
 	ASSIGN_RANGE(empty_dll->code_range,	dll_code_start,	dll_code_end);
 	ASSIGN_RANGE(empty_dll->data_range,	dll_bss_start,	dll_bss_end);
 	
