@@ -420,7 +420,7 @@ int main(INT32 argc, CHAR **argv) {
 		// If this is the first process, the ID is 0 and we have to store the number
 		*_cmemory = 0;
 	} else {
-		// If this is no the first, we increment it (atomically) and we use the new value as index
+		// If this is not the first, we increment it (atomically) and we use the new value as index
 		WIND::InterlockedIncrement((long *)_cmemory);
 	}
 	_pindex = *_cmemory;
@@ -436,16 +436,20 @@ int main(INT32 argc, CHAR **argv) {
 
 	/**
 	 *	Get a pointer to the SHM_PROCESS_ENV structure
-	 *	In this case do NOT unmap and to not release the handle (DUH)
+	 *	In this case do NOT unmap and do not release the handle (DUH)
 	 */
 	_pregion = WIND::CreateFileMapping((WIND::HANDLE)0xFFFFFFFF, NULL, PAGE_READWRITE, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT, "mepro");
     ASSERT(_pregion != NULL, "Fatal Error by CreateFileMapping");
 	_pmemory = (SHM_PROCESS_ENV *) WIND::MapViewOfFile(_pregion, FILE_MAP_WRITE, 0, 0, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
 	ASSERT(_pmemory != NULL, "Fatal Error by MapVieOfFile");
+	// If this is the first process do a favour and zero everything
+	if(KnobFirstProcess) {
+		RtlZeroMemory(_pmemory, sizeof(SHM_PROCESS_ENV) * MAX_PROCESS_COUNT);
+	}
 	_pcurrent = &_pmemory[_pindex];
 
 	// Reset all the memory (should be zeroed already)
-	memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
+	// memset(&_pmemory[_pindex], 0, sizeof(SHM_PROCESS_ENV));
 	// Put pid, name, and set -1 the lookup table
 	strcpy_s(_pmemory[_pindex].process_name, strlen(pname) + 1, pname);
 	memset(_pmemory[_pindex].thread_lookup, -1, sizeof(INT32) * MAX_THREAD_COUNT);
